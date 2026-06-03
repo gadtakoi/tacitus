@@ -25,7 +25,10 @@ async def app_exception_handler(request: Request, exc: AppError) -> JSONResponse
     """
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.message, "request_id": getattr(request.state, "request_id", "unknown")},
+        content={
+            "error": exc.message,
+            "request_id": getattr(request.state, "request_id", "unknown"),
+        },
     )
 
 

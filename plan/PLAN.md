@@ -70,14 +70,14 @@
 
 ### 3.7. Ruff и pre-commit-config.yml
 
-- [ ] Установка и настройка `pre-commit`
-- [ ] Создание `.pre-commit-config.yml`:
-  - [ ] Хук `ruff check` — линтинг
-  - [ ] Хук `ruff format` — форматирование
-  - [ ] Хук `pytest` — запуск тестов перед коммитом
-  - [ ] Хук `check-yaml`, `check-json`, `trailing-whitespace`
-- [ ] Установка pre-commit hooks: `pre-commit install`
-- [ ] Проверка: коммит блокируется при ошибках ruff/pytest
+- [x] Установка и настройка `pre-commit`
+- [x] Создание `.pre-commit-config.yaml`:
+  - [x] Хук `ruff check` — линтинг
+  - [x] Хук `ruff format` — форматирование
+  - [x] Хук `pytest` — запуск тестов перед коммитом
+  - [x] Хук `check-yaml`, `check-json`, `trailing-whitespace`, `end-of-file-fixer`, `check-added-large-files`
+- [x] Установка pre-commit hooks: `pre-commit install`
+- [x] Проверка: коммит блокируется при ошибках ruff/pytest
 
 ---
 
@@ -217,7 +217,7 @@
 | Этап                           | Статус      | Дата начала | Дата окончания |
 |--------------------------------|-------------|-------------|----------------|
 | 3.1–3.6 Базовый функционал     | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
-| 3.7 Ruff + pre-commit          | ☐ Не начато | —           | —              |
+| 3.7 Ruff + pre-commit          | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
 | 3.8 Хранилище S3 (MinIO)       | ☐ Не начато | —           | —              |
 | 3.9 React (file manager)       | ☐ Не начато | —           | —              |
 | 3.10 Авторизация               | ☐ Не начато | —           | —              |
