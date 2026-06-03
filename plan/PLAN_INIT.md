@@ -1,4 +1,8 @@
+План plan/PLAN_v1.md выполнен.
 Заполни файл plan/PLAN.md.
 Нужен подробный план с подразделами. 
-Проект на docker-compose, fastapi, ansible, nginx.
-Задача развернуть проект c hello world с помощью ansible.
+
+Добавь ruff и pre-commit-config.yml.
+Добавь хранилище s3.
+Добавь react для просмотра файлов в s3.
+Добавь авторизацию.
