@@ -11,6 +11,15 @@ services:
     environment:
       - TACITUS_APP_NAME=${TACITUS_APP_NAME:-tacitus}
       - TACITUS_DEBUG=${TACITUS_DEBUG:-false}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_BUCKET=${S3_BUCKET:-tacitus-files}
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - tacitus-network
     healthcheck:
@@ -19,6 +28,47 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: tacitus-minio
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - tacitus-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: tacitus-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:-minioadmin}
+      - S3_BUCKET=${S3_BUCKET:-tacitus-files}
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb local/$${S3_BUCKET} --ignore-existing
+      "
+    networks:
+      - tacitus-network
 
   nginx:
     image: nginx:1.27.5-alpine
@@ -33,6 +83,9 @@ services:
         condition: service_healthy
     networks:
       - tacitus-network
+
+volumes:
+  minio-data:
 
 networks:
   tacitus-network:
