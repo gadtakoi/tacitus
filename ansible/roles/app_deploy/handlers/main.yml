@@ -1,0 +1,5 @@
+---
+- name: Restart Tacitus
+  ansible.builtin.command:
+    cmd: "docker compose restart"
+    chdir: "{{ tacitus_deploy_dir }}"

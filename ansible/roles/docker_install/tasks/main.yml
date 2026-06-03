@@ -1,0 +1,57 @@
+---
+- name: Pre-check | Verify Docker is installed
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+  ignore_errors: true
+
+- name: Install Docker dependencies
+  ansible.builtin.package:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
+
+- name: Add Docker GPG key
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg
+    state: present
+  when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}]
+      https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}
+      {{ ansible_facts['lsb']['codename'] }} stable
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
+
+- name: Install Docker Engine and Docker Compose plugin
+  ansible.builtin.package:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+  when: docker_version.rc != 0
+
+- name: Ensure Docker service is running and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add user to docker group
+  ansible.builtin.user:
+    name: "{{ docker_user }}"
+    groups: docker
+    append: true
+  notify: Restart Docker

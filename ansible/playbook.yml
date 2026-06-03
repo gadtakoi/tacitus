@@ -1,0 +1,45 @@
+---
+- name: Deploy Tacitus Hello World
+  hosts: tacitus
+  gather_facts: true
+
+  pre_tasks:
+    - name: Pre-check | Verify target host connectivity
+      ansible.builtin.ping:
+
+  roles:
+    - role: docker_install
+      tags: [docker, install]
+
+    - role: app_deploy
+      tags: [app, deploy]
+
+  post_tasks:
+    - name: Post-check | Verify application responds with Hello World
+      ansible.builtin.uri:
+        url: "{{ app_hello_url }}"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: hello_response
+      retries: 5
+      delay: 3
+      until: hello_response.status == 200
+
+    - name: Post-check | Assert response contains Hello World
+      ansible.builtin.assert:
+        that:
+          - "'Hello World' in hello_response.content"
+        fail_msg: "Application did not return expected Hello World message"
+        success_msg: "Application is running and returning Hello World"
+
+    - name: Post-check | Verify all containers are healthy
+      ansible.builtin.command:
+        cmd: "docker compose ps --format json"
+        chdir: "{{ tacitus_deploy_dir }}"
+      register: container_status
+      changed_when: false
+
+    - name: Post-check | Display deployment status
+      ansible.builtin.debug:
+        msg: "Tacitus deployed successfully. Response: {{ hello_response.content }}"

@@ -1,0 +1,90 @@
+---
+- name: Pre-check | Verify Docker daemon is accessible
+  ansible.builtin.command: docker version --format '{{ '{{' }} .Server.Version {{ '}}' }}'
+  register: docker_server_version
+  changed_when: false
+
+- name: Pre-check | Verify Docker Compose plugin is installed
+  ansible.builtin.command: docker compose version
+  register: compose_version
+  changed_when: false
+
+- name: Ensure deployment directory exists
+  ansible.builtin.file:
+    path: "{{ tacitus_deploy_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy application files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ tacitus_deploy_dir }}/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  loop:
+    - "../../Dockerfile"
+    - "../../docker-compose.yml"
+    - "../../pyproject.toml"
+  notify: Restart Tacitus
+
+- name: Copy application source code
+  ansible.builtin.copy:
+    src: "../../app/"
+    dest: "{{ tacitus_deploy_dir }}/app/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart Tacitus
+
+- name: Copy nginx configuration
+  ansible.builtin.copy:
+    src: "../../nginx/"
+    dest: "{{ tacitus_deploy_dir }}/nginx/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart Tacitus
+
+- name: Render environment file
+  ansible.builtin.template:
+    src: .env.j2
+    dest: "{{ tacitus_deploy_dir }}/.env"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+  notify: Restart Tacitus
+
+- name: Build and start services
+  ansible.builtin.command:
+    cmd: "docker compose up --build -d"
+    chdir: "{{ tacitus_deploy_dir }}"
+  register: compose_up
+  changed_when: "'Started' in compose_up.stdout or 'Built' in compose_up.stdout"
+
+- name: Post-check | Wait for application to be ready
+  ansible.builtin.uri:
+    url: "{{ app_health_url }}"
+    method: GET
+    status_code: 200
+  register: health_check
+  retries: 10
+  delay: 3
+  until: health_check.status == 200
+
+- name: Post-check | Verify Hello World endpoint
+  ansible.builtin.uri:
+    url: "{{ app_hello_url }}"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: hello_check
+
+- name: Post-check | Assert Hello World response
+  ansible.builtin.assert:
+    that:
+      - "'Hello World' in hello_check.content"
+    fail_msg: "Application is not returning expected Hello World"
+    success_msg: "Application verified successfully"

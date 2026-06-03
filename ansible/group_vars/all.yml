@@ -1,0 +1,16 @@
+---
+# Application settings
+tacitus_app_name: "tacitus"
+tacitus_version: "0.1.0"
+tacitus_deploy_dir: "/opt/tacitus"
+tacitus_debug: "false"
+
+# Nginx settings
+nginx_host_port: 80
+
+# Docker settings
+docker_user: "{{ ansible_user }}"
+
+# Pre/post check settings
+app_health_url: "http://localhost:{{ nginx_host_port }}/health"
+app_hello_url: "http://localhost:{{ nginx_host_port }}/"
