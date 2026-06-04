@@ -29,7 +29,11 @@ class S3Service:
                 endpoint_url=self.endpoint,
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
-                config=Config(signature_version="s3v4"),
+                config=Config(
+                    signature_version="s3v4",
+                    connect_timeout=5,
+                    read_timeout=10,
+                ),
             )
         return self._client
 

@@ -57,3 +57,16 @@ def test_delete_file(mock_s3: MagicMock) -> None:
     data = response.json()
     assert data["filename"] == "test.txt"
     mock_s3.delete_file.assert_called_once_with("test.txt")
+
+
+def test_upload_file_too_large() -> None:
+    """Test uploading a file larger than 10 MB returns 413."""
+    token = _get_token()
+    large_content = b"x" * (10 * 1024 * 1024 + 1)
+    response = client.post(
+        "/files/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("large.txt", large_content, "text/plain")},
+    )
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"].lower()

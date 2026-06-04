@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
 from app.api.dependencies import get_current_user
 from app.schemas.files import (
@@ -55,6 +55,9 @@ async def upload_file(
     """
     request_id = getattr(request.state, "request_id", "unknown")
     content = await file.read()
+    max_size = 10 * 1024 * 1024  # 10 MB
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
     filename = file.filename or "unnamed"
     logger.info(
         "Uploading file",
