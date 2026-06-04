@@ -2,15 +2,19 @@
 
 ## 1. Цель
 
-Развернуть проект **Tacitus** на базе **FastAPI** + **React** в контейнеризованном окружении **Docker Compose** с обратным прокси **Nginx**, хранилищем **S3** (MinIO), системой **авторизации** (OAuth2/JWT) и полностью автоматизированным деплоем через **Ansible**.
+Развернуть проект **Tacitus** на базе **FastAPI** + **React** в контейнеризованном окружении **Docker Compose** с
+обратным прокси **Nginx**, хранилищем **S3** (MinIO), системой **авторизации** (OAuth2/JWT) и полностью
+автоматизированным деплоем через **Ansible**.
 
 **Выполненный базовый функционал (PLAN_v1):**
+
 - Hello World endpoint на FastAPI
 - Docker Compose с Nginx
 - Ansible playbook для деплоя
 - Структурированное логирование и обработка ошибок
 
 **Новый функционал (текущий план):**
+
 - `ruff` + `.pre-commit-config.yml` для контроля качества кода
 - Интеграция с S3-хранилищем (MinIO) для загрузки и хранения файлов
 - React-фронтенд для просмотра и управления файлами в S3
@@ -72,10 +76,10 @@
 
 - [x] Установка и настройка `pre-commit`
 - [x] Создание `.pre-commit-config.yaml`:
-  - [x] Хук `ruff check` — линтинг
-  - [x] Хук `ruff format` — форматирование
-  - [x] Хук `pytest` — запуск тестов перед коммитом
-  - [x] Хук `check-yaml`, `check-json`, `trailing-whitespace`, `end-of-file-fixer`, `check-added-large-files`
+    - [x] Хук `ruff check` — линтинг
+    - [x] Хук `ruff format` — форматирование
+    - [x] Хук `pytest` — запуск тестов перед коммитом
+    - [x] Хук `check-yaml`, `check-json`, `trailing-whitespace`, `end-of-file-fixer`, `check-added-large-files`
 - [x] Установка pre-commit hooks: `pre-commit install`
 - [x] Проверка: коммит блокируется при ошибках ruff/pytest
 
@@ -84,16 +88,16 @@
 ### 3.8. Хранилище S3 (MinIO)
 
 - [x] Интеграция MinIO в Docker Compose:
-  - [x] Сервис `minio` с фиксированной версией образа
-  - [x] Персистентный volume для данных
-  - [x] Переменные окружения вынесены в `.env`
-  - [x] Healthcheck для MinIO
+    - [x] Сервис `minio` с фиксированной версией образа
+    - [x] Персистентный volume для данных
+    - [x] Переменные окружения вынесены в `.env`
+    - [x] Healthcheck для MinIO
 - [x] Создание bucket при старте (init-контейнер minio/mc) (init-контейнер или entrypoint)
 - [x] FastAPI: сервисный слой для работы с S3:
-  - [x] Загрузка файлов (`POST /files/upload`)
-  - [x] Список файлов (`GET /files`)
-  - [x] Получение файла / presigned URL (`GET /files/{filename}`)
-  - [x] Удаление файла (`DELETE /files/{filename}`)
+    - [x] Загрузка файлов (`POST /files/upload`)
+    - [x] Список файлов (`GET /files`)
+    - [x] Получение файла / presigned URL (`GET /files/{filename}`)
+    - [x] Удаление файла (`DELETE /files/{filename}`)
 - [x] Pydantic-схемы для S3-операций
 - [x] Тесты для S3-операций (mock boto3)
 - [x] Настройка CORS для доступа из React
@@ -117,10 +121,10 @@
 - [x] Сборка React-фронтенда в Docker (многоэтапная сборка)
 - [x] Страница авторизации (login form)
 - [x] Страница просмотра файлов:
-  - [x] Таблица / список файлов из S3
-  - [x] Загрузка нового файла (input type=file)
-  - [x] Скачивание файла по presigned URL
-  - [x] Удаление файла
+    - [x] Таблица / список файлов из S3
+    - [x] Загрузка нового файла (input type=file)
+    - [x] Скачивание файла по presigned URL
+    - [x] Удаление файла
 - [x] Интеграция с FastAPI API (fetch, JWT в заголовках)
 - [x] Обновление `docker-compose.yml`: nginx собирает frontend внутри Dockerfile
 - [x] Обновление Nginx: раздача статики React (/ → index.html), проксирование /api/ → FastAPI
@@ -132,60 +136,60 @@
 - [x] Выбор механизма: JWT access tokens через FastAPI
 - [x] Модели пользователей — in-memory store для MVP
 - [x] Эндпоинты аутентификации:
-  - [x] `POST /auth/register` — регистрация
-  - [x] `POST /auth/login` — вход, выдача JWT
-  - [x] `GET /auth/me` — информация о текущем пользователе
+    - [x] `POST /auth/register` — регистрация
+    - [x] `POST /auth/login` — вход, выдача JWT
+    - [x] `GET /auth/me` — информация о текущем пользователе
 - [x] Защита эндпоинтов (`Depends` с JWT verification)
 - [x] Хеширование паролей (pbkdf2_sha256 via passlib)
 - [x] Секреты (JWT_SECRET) читаются из env vars (dev default только для локальной разработки)
 - [x] Интеграция авторизации с S3-операциями (`/files/*` защищены JWT)
 - [x] Тесты:
-  - [x] Успешный login
-  - [x] Доступ к защищённым endpoint без токена → 401
-  - [x] Доступ с невалидным токеном → 401
-  - [x] Регистрация + авторизация (happy path)
+    - [x] Успешный login
+    - [x] Доступ к защищённым endpoint без токена → 401
+    - [x] Доступ с невалидным токеном → 401
+    - [x] Регистрация + авторизация (happy path)
 
 ---
 
 ### 3.11. Интеграционное тестирование и верификация
 
 - [x] Локальное тестирование:
-  - [x] `docker compose up` поднимает полный стек (app + nginx + minio + frontend)
-  - [x] React-фронтенд доступен через Nginx (`GET /` возвращает `index.html`)
-  - [x] Авторизация работает end-to-end (register / login / me / 401)
-  - [x] Загрузка / скачивание / удаление файлов через API
-  - [x] Логи не содержат секретов (пароли передаются в JSON body, не в query string)
+    - [x] `docker compose up` поднимает полный стек (app + nginx + minio + frontend)
+    - [x] React-фронтенд доступен через Nginx (`GET /` возвращает `index.html`)
+    - [x] Авторизация работает end-to-end (register / login / me / 401)
+    - [x] Загрузка / скачивание / удаление файлов через API
+    - [x] Логи не содержат секретов (пароли передаются в JSON body, не в query string)
 - [x] Интеграционные тесты Ansible:
-  - [x] Синтаксис playbook валиден (YAML check)
-  - [ ] Прогон playbook на тестовом хосте (требуется Linux хост)
-  - [ ] Повторный прогон подтверждает идемпотентность
+    - [x] Синтаксис playbook валиден (YAML check)
+    - [ ] Прогон playbook на тестовом хосте (требуется Linux хост)
+    - [ ] Повторный прогон подтверждает идемпотентность
 - [x] Security checklist:
-  - [x] Нет hardcoded credentials (dev defaults только для локальной разработки)
-  - [x] Нет секретов в репозитории (`.env` в `.gitignore`)
-  - [x] JWT_SECRET в env vars, не в коде
-  - [x] Пароли захешированы (pbkdf2_sha256 via passlib)
-  - [x] CORS настроен для dev (`allow_origins=["*"]`)
-  - [x] Версии образов зафиксированы (Dockerfile + docker-compose.yml)
-  - [x] Nginx не проксирует внутренние сервисы наружу напрямую (только `:80`)
+    - [x] Нет hardcoded credentials (dev defaults только для локальной разработки)
+    - [x] Нет секретов в репозитории (`.env` в `.gitignore`)
+    - [x] JWT_SECRET в env vars, не в коде
+    - [x] Пароли захешированы (pbkdf2_sha256 via passlib)
+    - [x] CORS настроен для dev (`allow_origins=["*"]`)
+    - [x] Версии образов зафиксированы (Dockerfile + docker-compose.yml)
+    - [x] Nginx не проксирует внутренние сервисы наружу напрямую (только `:80`)
 
 ---
 
 ## 4. Технологический стек
 
-| Слой          | Технология         | Версия / Требование                       |
-|---------------|--------------------|-------------------------------------------|
-| Язык (backend)| Python             | >= 3.14                                   |
-| Framework     | FastAPI            | Latest stable, pinned                     |
-| ORM / БД      | SQLAlchemy + Alembic| Для хранения пользователей (MVP)          |
-| Auth          | python-jose + passlib[pwd]| JWT + pbkdf2_sha256 хеширование           |
-| Server        | Uvicorn            | Latest stable, pinned                     |
-| Frontend      | React + TypeScript | Vite, Latest stable                       |
-| Proxy         | Nginx              | Stable, pinned version                    |
-| S3            | MinIO              | Stable, pinned version                    |
-| Контейнеры    | Docker + Compose   | Docker Engine >= 24.x                     |
-| Автоматизация | Ansible            | >= 2.15, core                             |
-| Тестирование  | pytest + httpx     | Latest stable, pinned                     |
-| Линтинг       | ruff + pre-commit  | Latest stable, pinned                     |
+| Слой           | Технология                 | Версия / Требование              |
+|----------------|----------------------------|----------------------------------|
+| Язык (backend) | Python                     | >= 3.14                          |
+| Framework      | FastAPI                    | Latest stable, pinned            |
+| ORM / БД       | SQLAlchemy + Alembic       | Для хранения пользователей (MVP) |
+| Auth           | python-jose + passlib[pwd] | JWT + pbkdf2_sha256 хеширование  |
+| Server         | Uvicorn                    | Latest stable, pinned            |
+| Frontend       | React + TypeScript         | Vite, Latest stable              |
+| Proxy          | Nginx                      | Stable, pinned version           |
+| S3             | MinIO                      | Stable, pinned version           |
+| Контейнеры     | Docker + Compose           | Docker Engine >= 24.x            |
+| Автоматизация  | Ansible                    | >= 2.15, core                    |
+| Тестирование   | pytest + httpx             | Latest stable, pinned            |
+| Линтинг        | ruff + pre-commit          | Latest stable, pinned            |
 
 ---
 
@@ -214,29 +218,29 @@
 
 ## 6. Сроки и контрольные точки
 
-| Этап                           | Статус      | Дата начала | Дата окончания |
-|--------------------------------|-------------|-------------|----------------|
-| 3.1–3.6 Базовый функционал     | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
-| 3.7 Ruff + pre-commit          | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
-| 3.8 Хранилище S3 (MinIO)       | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
-| 3.9 React (file manager)       | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
-| 3.10 Авторизация               | ☑ Выполнено | 2026-06-04  | 2026-06-04     |
-| 3.11 Интеграционное тестирование| ☑ Частично выполнено | 2026-06-04  | 2026-06-04     |
+| Этап                             | Статус               | Дата начала | Дата окончания |
+|----------------------------------|----------------------|-------------|----------------|
+| 3.1–3.6 Базовый функционал       | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
+| 3.7 Ruff + pre-commit            | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
+| 3.8 Хранилище S3 (MinIO)         | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
+| 3.9 React (file manager)         | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
+| 3.10 Авторизация                 | ☑ Выполнено          | 2026-06-04  | 2026-06-04     |
+| 3.11 Интеграционное тестирование | ☑ Частично выполнено | 2026-06-04  | 2026-06-04     |
 
 ---
 
 ## 7. Риски и ограничения
 
-| Риск                              | Митигация                                               |
-|-----------------------------------|---------------------------------------------------------|
-| Несовместимость версий Docker     | Фиксировать версии, тестировать на целевом хосте        |
-| Утечка секретов в репозиторий     | Использовать `.gitignore`, Vault для production         |
-| Ansible не идемпотентен           | Проверять `changed=0` при повторном прогоне             |
-| Конфликт портов                   | Параметризовать порты через `group_vars`                |
-| Отсутствие rollback               | Добавить `docker compose down` + backup логики          |
-| JWT_SECRET в коде                 | Хранить только в Vault / env vars, никогда не коммитить |
-| CORS-уязвимости                   | Жёсткий allow-list origin в production                  |
-| XSS через загружаемые файлы       | Валидация MIME-типа и расширения, Content-Disposition   |
+| Риск                          | Митигация                                               |
+|-------------------------------|---------------------------------------------------------|
+| Несовместимость версий Docker | Фиксировать версии, тестировать на целевом хосте        |
+| Утечка секретов в репозиторий | Использовать `.gitignore`, Vault для production         |
+| Ansible не идемпотентен       | Проверять `changed=0` при повторном прогоне             |
+| Конфликт портов               | Параметризовать порты через `group_vars`                |
+| Отсутствие rollback           | Добавить `docker compose down` + backup логики          |
+| JWT_SECRET в коде             | Хранить только в Vault / env vars, никогда не коммитить |
+| CORS-уязвимости               | Жёсткий allow-list origin в production                  |
+| XSS через загружаемые файлы   | Валидация MIME-типа и расширения, Content-Disposition   |
 
 ---
 
