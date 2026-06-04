@@ -11,6 +11,7 @@ from app.schemas.files import (
     FileUploadResponse,
     FileUrlResponse,
 )
+from app.schemas.stats import FileStat, S3StatsResponse
 from app.services.s3_service import s3_service
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -70,6 +71,33 @@ async def upload_file(
     )
     s3_service.upload_file(filename, content)
     return FileUploadResponse(filename=filename)
+
+
+@router.get("/stats", response_model=S3StatsResponse)
+async def get_stats(
+    request: Request,
+    current_user: str = Depends(get_current_user),
+) -> S3StatsResponse:
+    """Get S3 bucket statistics.
+
+    Args:
+        request: FastAPI request object.
+        current_user: Authenticated username.
+
+    Returns:
+        S3StatsResponse with bucket statistics.
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.info("Fetching bucket stats", extra={"request_id": request_id, "user": current_user})
+    stats = s3_service.get_bucket_stats()
+    largest = stats.get("largest_file")
+    return S3StatsResponse(
+        total_files=stats["total_files"],
+        total_size_bytes=stats["total_size_bytes"],
+        total_size_human=stats["total_size_human"],
+        average_size_bytes=stats["average_size_bytes"],
+        largest_file=FileStat(**largest) if largest else None,
+    )
 
 
 @router.get("/{filename}", response_model=FileUrlResponse)

@@ -1,0 +1,6 @@
+---
+# SSL certificate defaults
+ssl_certbot_staging: false
+ssl_certbot_agree_tos: true
+ssl_auto_renew: true
+ssl_certbot_webroot: "/var/www/certbot"

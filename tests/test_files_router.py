@@ -59,6 +59,43 @@ def test_delete_file(mock_s3: MagicMock) -> None:
     mock_s3.delete_file.assert_called_once_with("test.txt")
 
 
+@patch("app.api.routers.files.s3_service")
+def test_get_stats(mock_s3: MagicMock) -> None:
+    """Test fetching bucket statistics."""
+    mock_s3.get_bucket_stats.return_value = {
+        "total_files": 3,
+        "total_size_bytes": 1536,
+        "total_size_human": "1.5 KB",
+        "average_size_bytes": 512.0,
+        "largest_file": {"filename": "big.txt", "size_bytes": 1024},
+    }
+    token = _get_token()
+    response = client.get("/files/stats", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_files"] == 3
+    assert data["total_size_human"] == "1.5 KB"
+    assert data["largest_file"]["filename"] == "big.txt"
+
+
+@patch("app.api.routers.files.s3_service")
+def test_get_stats_empty(mock_s3: MagicMock) -> None:
+    """Test fetching stats for empty bucket."""
+    mock_s3.get_bucket_stats.return_value = {
+        "total_files": 0,
+        "total_size_bytes": 0,
+        "total_size_human": "0 B",
+        "average_size_bytes": 0.0,
+        "largest_file": None,
+    }
+    token = _get_token()
+    response = client.get("/files/stats", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_files"] == 0
+    assert data["largest_file"] is None
+
+
 def test_upload_file_too_large() -> None:
     """Test uploading a file larger than 10 MB returns 413."""
     token = _get_token()

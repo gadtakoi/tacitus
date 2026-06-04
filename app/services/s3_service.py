@@ -116,5 +116,60 @@ class S3Service:
             logger.error("Failed to delete file", extra={"file_name": filename, "error": str(e)})
             raise
 
+    def get_bucket_stats(self) -> dict[str, int | float | dict[str, int] | None]:
+        """Return statistics for the S3 bucket.
+
+        Returns:
+            Dictionary with total_files, total_size_bytes, total_size_human,
+            average_size_bytes, and largest_file.
+        """
+        try:
+            response = self._get_client().list_objects_v2(Bucket=self.bucket)
+            contents = response.get("Contents", [])
+            if not contents:
+                return {
+                    "total_files": 0,
+                    "total_size_bytes": 0,
+                    "total_size_human": "0 B",
+                    "average_size_bytes": 0.0,
+                    "largest_file": None,
+                }
+
+            total_files = len(contents)
+            total_size = sum(obj["Size"] for obj in contents)
+            average_size = total_size / total_files
+            largest = max(contents, key=lambda obj: obj["Size"])
+
+            return {
+                "total_files": total_files,
+                "total_size_bytes": total_size,
+                "total_size_human": _human_readable_size(total_size),
+                "average_size_bytes": average_size,
+                "largest_file": {"filename": largest["Key"], "size_bytes": largest["Size"]},
+            }
+        except ClientError as e:
+            logger.error("Failed to get bucket stats", extra={"error": str(e)})
+            raise
+
+
+def _human_readable_size(size_bytes: int) -> str:
+    """Convert bytes to human readable string.
+
+    Args:
+        size_bytes: Size in bytes.
+
+    Returns:
+        Human readable size string.
+    """
+    if size_bytes == 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    idx = 0
+    size = float(size_bytes)
+    while size >= 1024 and idx < len(units) - 1:
+        size /= 1024
+        idx += 1
+    return f"{size:.1f} {units[idx]}"
+
 
 s3_service = S3Service()

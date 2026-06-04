@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { filesApi, type FileListResponse } from "../api/client";
+import { filesApi, type FileListResponse, type StatsResponse } from "../api/client";
 
 function FileManager() {
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -20,9 +21,20 @@ function FileManager() {
     }
   }, []);
 
+  const loadStats = useCallback(async () => {
+    try {
+      const data: StatsResponse = await filesApi.stats();
+      setStats(data);
+    } catch (err) {
+      // Silently ignore stats errors to avoid cluttering UI
+      console.error("Failed to load stats", err);
+    }
+  }, []);
+
   useEffect(() => {
     loadFiles();
-  }, [loadFiles]);
+    loadStats();
+  }, [loadFiles, loadStats]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -32,6 +44,7 @@ function FileManager() {
     try {
       await filesApi.upload(file);
       await loadFiles();
+      await loadStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -55,6 +68,7 @@ function FileManager() {
     try {
       await filesApi.delete(filename);
       await loadFiles();
+      await loadStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     }
@@ -64,6 +78,31 @@ function FileManager() {
     <div style={{ maxWidth: 800, margin: "40px auto" }}>
       <h2>Files</h2>
       {error && <div style={{ color: "red", marginBottom: 12 }}>{error}</div>}
+      {stats && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            border: "1px solid #ddd",
+            borderRadius: 6,
+            background: "#fafafa",
+          }}
+        >
+          <strong>Bucket Stats</strong>
+          <div style={{ marginTop: 6, fontSize: 14 }}>
+            Total files: <strong>{stats.total_files}</strong> &middot; Total size:{" "}
+            <strong>{stats.total_size_human}</strong> &middot; Average:{" "}
+            <strong>{stats.average_size_bytes.toFixed(0)} bytes</strong>
+            {stats.largest_file && (
+              <span>
+                {" "}
+                &middot; Largest: <strong>{stats.largest_file.filename}</strong> ({" "}
+                {stats.largest_file.size_human || `${stats.largest_file.size_bytes} bytes`})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         <label>
           Upload file:{" "}

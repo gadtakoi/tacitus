@@ -56,3 +56,34 @@ def test_delete_file(mock_client: MagicMock, s3_service: S3Service) -> None:
         Bucket="tacitus-files",
         Key="test.txt",
     )
+
+
+@patch("app.services.s3_service.boto3.client")
+def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """Test fetching bucket statistics."""
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "a.txt", "Size": 256},
+            {"Key": "b.txt", "Size": 512},
+            {"Key": "c.txt", "Size": 768},
+        ]
+    }
+    stats = s3_service.get_bucket_stats()
+    assert stats["total_files"] == 3
+    assert stats["total_size_bytes"] == 1536
+    assert stats["total_size_human"] == "1.5 KB"
+    assert stats["average_size_bytes"] == 512.0
+    assert stats["largest_file"]["filename"] == "c.txt"
+    assert stats["largest_file"]["size_bytes"] == 768
+
+
+@patch("app.services.s3_service.boto3.client")
+def test_get_bucket_stats_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """Test fetching stats for empty bucket."""
+    mock_client.return_value.list_objects_v2.return_value = {}
+    stats = s3_service.get_bucket_stats()
+    assert stats["total_files"] == 0
+    assert stats["total_size_bytes"] == 0
+    assert stats["total_size_human"] == "0 B"
+    assert stats["average_size_bytes"] == 0.0
+    assert stats["largest_file"] is None

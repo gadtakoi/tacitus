@@ -7,6 +7,12 @@ tacitus_debug: "false"
 
 # Nginx settings
 nginx_host_port: 80
+nginx_https_port: 443
+
+# SSL / Domain settings
+tacitus_domain: ""
+tacitus_enable_https: false
+tacitus_email: "admin@example.com"
 
 # Docker settings
 docker_user: "{{ ansible_user }}"

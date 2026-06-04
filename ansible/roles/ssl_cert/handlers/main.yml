@@ -1,0 +1,6 @@
+---
+- name: Reload nginx
+  ansible.builtin.command:
+    cmd: "docker exec tacitus-nginx nginx -s reload"
+  become: true
+  changed_when: true

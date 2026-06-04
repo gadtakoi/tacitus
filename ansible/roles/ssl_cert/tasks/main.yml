@@ -1,0 +1,79 @@
+---
+- name: Install certbot
+  ansible.builtin.package:
+    name:
+      - certbot
+    state: present
+  become: true
+
+- name: Ensure webroot directory exists
+  ansible.builtin.file:
+    path: "{{ ssl_certbot_webroot }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Check if certificate already exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ tacitus_domain }}/fullchain.pem"
+  register: cert_file
+
+- name: Obtain SSL certificate with certbot (webroot)
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly
+      --non-interactive
+      --agree-tos
+      --email {{ tacitus_email }}
+      --webroot
+      --webroot-path {{ ssl_certbot_webroot }}
+      -d {{ tacitus_domain }}
+      {{ '--staging' if ssl_certbot_staging else '' }}
+  become: true
+  when:
+    - not cert_file.stat.exists
+    - tacitus_domain | length > 0
+  notify: Reload nginx
+
+- name: Ensure certificate files exist
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ tacitus_domain }}/fullchain.pem"
+  register: cert_verify
+
+- name: Fail if certificate was not created
+  ansible.builtin.fail:
+    msg: "SSL certificate for {{ tacitus_domain }} was not created. Check certbot logs."
+  when:
+    - tacitus_enable_https | bool
+    - not cert_verify.stat.exists
+
+- name: Deploy production nginx config with SSL
+  ansible.builtin.template:
+    src: nginx-ssl.conf.j2
+    dest: "{{ tacitus_deploy_dir }}/nginx/nginx.conf"
+    mode: "0644"
+  when: tacitus_enable_https | bool
+
+- name: Ensure certbot webroot is mounted into nginx container
+  ansible.builtin.lineinfile:
+    path: "{{ tacitus_deploy_dir }}/docker-compose.yml"
+    regexp: '.*webroot.*'
+    line: '      - {{ ssl_certbot_webroot }}:/var/www/certbot:ro'
+    insertafter: 'letsencrypt:/etc/letsencrypt:ro'
+  when: tacitus_enable_https | bool
+
+- name: Rebuild and restart nginx with SSL config
+  ansible.builtin.command:
+    cmd: "docker compose up -d --build nginx"
+    chdir: "{{ tacitus_deploy_dir }}"
+  when: tacitus_enable_https | bool
+
+- name: Setup auto-renewal cron job
+  ansible.builtin.cron:
+    name: "Certbot auto-renewal"
+    job: "certbot renew --quiet --deploy-hook 'docker exec tacitus-nginx nginx -s reload'"
+    minute: "0"
+    hour: "3"
+    user: root
+  become: true
+  when: ssl_auto_renew | bool

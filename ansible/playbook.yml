@@ -11,11 +11,15 @@
     - role: docker_install
       tags: [docker, install]
 
+    - role: ssl_cert
+      tags: [ssl, cert]
+      when: tacitus_enable_https | bool
+
     - role: app_deploy
       tags: [app, deploy]
 
   post_tasks:
-    - name: Post-check | Verify application responds with Hello World
+    - name: Post-check | Verify HTTP application responds
       ansible.builtin.uri:
         url: "{{ app_hello_url }}"
         method: GET
@@ -25,13 +29,44 @@
       retries: 5
       delay: 3
       until: hello_response.status == 200
+      when: not tacitus_enable_https | bool
 
-    - name: Post-check | Assert response contains Hello World
+    - name: Post-check | Assert response contains Hello World (HTTP)
       ansible.builtin.assert:
         that:
           - "'Hello World' in hello_response.content"
         fail_msg: "Application did not return expected Hello World message"
         success_msg: "Application is running and returning Hello World"
+      when: not tacitus_enable_https | bool
+
+    - name: Post-check | Verify HTTPS redirect (HTTP → HTTPS)
+      ansible.builtin.uri:
+        url: "http://{{ tacitus_domain }}/"
+        method: GET
+        status_code: 301
+        follow_redirects: none
+      when: tacitus_enable_https | bool
+
+    - name: Post-check | Verify HTTPS application responds
+      ansible.builtin.uri:
+        url: "https://{{ tacitus_domain }}/"
+        method: GET
+        status_code: 200
+        return_content: true
+        validate_certs: "{{ not ssl_certbot_staging }}"
+      register: https_response
+      retries: 5
+      delay: 3
+      until: https_response.status == 200
+      when: tacitus_enable_https | bool
+
+    - name: Post-check | Assert response contains Hello World (HTTPS)
+      ansible.builtin.assert:
+        that:
+          - "'Hello World' in https_response.content"
+        fail_msg: "Application did not return expected Hello World message over HTTPS"
+        success_msg: "Application is running over HTTPS and returning Hello World"
+      when: tacitus_enable_https | bool
 
     - name: Post-check | Verify all containers are healthy
       ansible.builtin.command:

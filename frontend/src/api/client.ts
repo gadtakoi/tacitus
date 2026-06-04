@@ -45,6 +45,20 @@ export interface FileDeleteResponse {
   message: string;
 }
 
+export interface FileStat {
+  filename: string;
+  size_bytes: number;
+  size_human?: string;
+}
+
+export interface StatsResponse {
+  total_files: number;
+  total_size_bytes: number;
+  total_size_human: string;
+  average_size_bytes: number;
+  largest_file: FileStat | null;
+}
+
 export const filesApi = {
   list: () => apiFetch<FileListResponse>("/files/"),
   upload: (file: File) => {
@@ -61,6 +75,7 @@ export const filesApi = {
     apiFetch<FileDeleteResponse>(`/files/${encodeURIComponent(filename)}`, {
       method: "DELETE",
     }),
+  stats: () => apiFetch<StatsResponse>("/files/stats"),
 };
 
 export const authApi = {
