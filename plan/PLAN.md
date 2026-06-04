@@ -1,260 +1,202 @@
-# План проекта Tacitus
+# План: Документирование и завершение проекта Tacitus
 
-## 1. Цель
+## 1. Документирование всех функций
 
-Развернуть проект **Tacitus** на базе **FastAPI** + **React** в контейнеризованном окружении **Docker Compose** с
-обратным прокси **Nginx**, хранилищем **S3** (MinIO), системой **авторизации** (OAuth2/JWT) и полностью
-автоматизированным деплоем через **Ansible**.
+### 1.1. Аудит существующих docstrings
 
-**Выполненный базовый функционал (PLAN_v1):**
+- [x] Проверить все модули в `app/` на наличие module docstrings (`__init__.py`, `.py` файлы)
+- [x] Проверить все публичные классы:
+  - [x] `Settings`
+  - [x] `S3Service`
+  - [x] `HelloService`
+  - [x] `AuthError`
+  - [x] `RequestIdFilter`
+  - [x] `RequestIdMiddleware`
+- [x] Проверить все публичные функции:
+  - [x] `setup_logging`
+  - [x] `get_request_id`
+  - [x] `hash_password`
+  - [x] `verify_password`
+  - [x] `create_access_token`
+  - [x] `decode_access_token`
+  - [x] `register_user`
+  - [x] `authenticate_user`
+  - [x] `get_user`
+  - [x] `app_exception_handler`
+  - [x] `generic_exception_handler`
+  - [x] `get_current_user`
+  - [x] `health_check`
+  - [x] `hello_world`
+  - [x] `auth_register`
+  - [x] `auth_login`
+  - [x] `auth_refresh`
+  - [x] `auth_me`
+  - [x] `auth_logout`
+  - [x] `list_files`
+  - [x] `upload_file`
+  - [x] `get_file_url`
+  - [x] `delete_file`
+- [x] Проверить все тестовые функции в `tests/`
 
-- Hello World endpoint на FastAPI
-- Docker Compose с Nginx
-- Ansible playbook для деплоя
-- Структурированное логирование и обработка ошибок
+### 1.2. Добавление недостающих docstrings
 
-**Новый функционал (текущий план):**
+- [x] Добавить module docstrings в пустые `__init__.py`:
+  - [x] `app/__init__.py`
+  - [x] `app/api/__init__.py`
+  - [x] `app/api/routers/__init__.py`
+  - [x] `app/core/__init__.py`
+  - [x] `app/schemas/__init__.py`
+  - [x] `app/services/__init__.py`
+  - [x] `tests/__init__.py`
+- [x] Убедиться, что все функции имеют Google-style docstrings (Args, Returns, Raises)
+- [x] Проверить через `ruff check .` и `pytest`
 
-- `ruff` + `.pre-commit-config.yml` для контроля качества кода
-- Интеграция с S3-хранилищем (MinIO) для загрузки и хранения файлов
-- React-фронтенд для просмотра и управления файлами в S3
-- Система авторизации и аутентификации (JWT/OAuth2)
+### 1.3. Финальная проверка
 
----
-
-## 2. Архитектура
-
-```
-┌─────────────┐
-│   Client    │
-└──────┬──────┘
-       │ HTTP
-       ▼
-┌─────────────┐     ┌───────────────────┐     ┌─────────────┐
-│    Nginx    │────▶│  FastAPI (Uvicorn)│────▶│    S3 /     │
-│  (reverse   │     │   API + Auth      │     │   MinIO     │
-│   proxy)    │     └───────────────────┘     └─────────────┘
-│             │              │
-│             │              ▼
-│             │     ┌───────────────────┐
-│             │     │   React SPA       │
-│             │     │   (file manager)  │
-│             │     └───────────────────┘
-└─────────────┘            ▲
-       │                   │
-       └───────────────────┘
-          Docker Compose
-```
-
-### Компоненты
-
-| Компонент   | Назначение                                              |
-|-------------|---------------------------------------------------------|
-| **Nginx**   | Обратный прокси, терминация HTTP, раздача статики React |
-| **FastAPI** | ASGI-приложение: API, auth, S3-интеграция               |
-| **React**   | SPA для просмотра и управления файлами в S3             |
-| **MinIO**   | S3-совместимое объектное хранилище                      |
-| **Docker**  | Контейнеризация сервисов                                |
-| **Ansible** | Автоматизация подготовки хоста и запуска стека          |
-
----
-
-## 3. Этапы реализации
-
-### 3.1–3.6. Базовый функционал (выполнено в PLAN_v1)
-
-- [x] Подготовка окружения разработки (Python 3.14+, FastAPI, pytest, ruff)
-- [x] FastAPI Hello World с разделением слоёв, логированием, обработкой ошибок
-- [x] Docker + Docker Compose: многоэтапная сборка, healthcheck, non-root user
-- [x] Nginx: обратный прокси, security headers, `nginx -t`
-- [x] Ansible playbook: установка Docker, деплой приложения, pre/post-checks
-- [x] Тестирование: pytest 6/6 passed, `ruff check .` без ошибок
+- [x] Запустить `ruff check .` — должен проходить без ошибок
+- [x] Запустить `pytest tests/ -v` — все тесты должны проходить
 
 ---
 
-### 3.7. Ruff и pre-commit-config.yml
+## 2. Создание документации в каталоге `docs/`
 
-- [x] Установка и настройка `pre-commit`
-- [x] Создание `.pre-commit-config.yaml`:
-    - [x] Хук `ruff check` — линтинг
-    - [x] Хук `ruff format` — форматирование
-    - [x] Хук `pytest` — запуск тестов перед коммитом
-    - [x] Хук `check-yaml`, `check-json`, `trailing-whitespace`, `end-of-file-fixer`, `check-added-large-files`
-- [x] Установка pre-commit hooks: `pre-commit install`
-- [x] Проверка: коммит блокируется при ошибках ruff/pytest
+### 2.1. Структура каталога
 
----
+- [x] Создать `docs/index.md`
+- [x] Создать `docs/backend.md`
+- [x] Создать `docs/frontend.md`
+- [x] Создать `docs/infrastructure.md`
+- [x] Создать `docs/testing.md`
+- [x] Создать `docs/deployment.md`
 
-### 3.8. Хранилище S3 (MinIO)
+### 2.2. Содержание `docs/backend.md`
 
-- [x] Интеграция MinIO в Docker Compose:
-    - [x] Сервис `minio` с фиксированной версией образа
-    - [x] Персистентный volume для данных
-    - [x] Переменные окружения вынесены в `.env`
-    - [x] Healthcheck для MinIO
-- [x] Создание bucket при старте (init-контейнер minio/mc) (init-контейнер или entrypoint)
-- [x] FastAPI: сервисный слой для работы с S3:
-    - [x] Загрузка файлов (`POST /files/upload`)
-    - [x] Список файлов (`GET /files`)
-    - [x] Получение файла / presigned URL (`GET /files/{filename}`)
-    - [x] Удаление файла (`DELETE /files/{filename}`)
-- [x] Pydantic-схемы для S3-операций
-- [x] Тесты для S3-операций (mock boto3)
-- [x] Настройка CORS для доступа из React
+- [x] Описание технологий (Python 3.14, FastAPI, Pydantic, python-jose, passlib, boto3)
+- [x] Архитектура проекта (диаграмма слоёв: api → services → schemas → core)
+- [x] Описание аутентификации (JWT, pbkdf2_sha256, in-memory store)
+- [x] Описание endpoints (`/`, `/health`, `/auth/*`, `/files/*`)
+- [x] Переменные окружения (префикс `TACITUS_`)
+- [x] Инструкция по локальному запуску backend
 
----
+### 2.3. Содержание `docs/frontend.md`
 
-### 3.9. React для просмотра файлов в S3
+- [x] Описание технологий (React 18, TypeScript, Vite)
+- [x] Структура проекта (`frontend/src/`)
+- [x] Описание API клиента (`api/client.ts`)
+- [x] Инструкция по сборке (`npm install && npm run build`)
+- [x] Описание интеграции с backend (JWT, CORS)
 
-- [x] Инициализация React-приложения (Vite + TypeScript)
-- [x] Настройка структуры проекта:
-  ```
-  frontend/
-  ├── src/
-  │   ├── api/
-  │   ├── components/
-  │   ├── pages/
-  │   └── App.tsx
-  ├── Dockerfile
-  └── nginx.conf
-  ```
-- [x] Сборка React-фронтенда в Docker (многоэтапная сборка)
-- [x] Страница авторизации (login form)
-- [x] Страница просмотра файлов:
-    - [x] Таблица / список файлов из S3
-    - [x] Загрузка нового файла (input type=file)
-    - [x] Скачивание файла по presigned URL
-    - [x] Удаление файла
-- [x] Интеграция с FastAPI API (fetch, JWT в заголовках)
-- [x] Обновление `docker-compose.yml`: nginx собирает frontend внутри Dockerfile
-- [x] Обновление Nginx: раздача статики React (/ → index.html), проксирование /api/ → FastAPI
+### 2.4. Содержание `docs/infrastructure.md`
+
+- [x] Описание Docker Compose сервисов (app, nginx, minio, minio-init)
+- [x] Описание Nginx конфигурации (proxy_pass, static files, security headers)
+- [x] Описание MinIO (S3 API, console, bucket provisioning)
+- [x] Security замечания (фиксированные версии, внутренние порты, dev credentials)
+
+### 2.5. Содержание `docs/testing.md`
+
+- [x] Описание инструментов (pytest, ruff, pre-commit, pytest-cov)
+- [x] Команды запуска (`pytest tests/ -v`, `ruff check .`, `pre-commit run --all-files`)
+- [x] Структура тестов (`test_hello.py`, `test_auth.py`, `test_files_router.py`, `test_s3_service.py`)
+- [x] Текущее покрытие кода (цель: отобразить актуальный процент)
+
+### 2.6. Содержание `docs/deployment.md`
+
+- [x] Локальный запуск (`docker compose up -d`)
+- [x] Ansible playbook (структура, роли, запуск)
+- [x] Переменные окружения для production (JWT_SECRET, S3 credentials)
+- [x] Vault integration (согласно `.ai/modules/vault.md`)
+
+### 2.7. Содержание `docs/index.md`
+
+- [x] Оглавление со ссылками на все разделы
+- [x] Краткое описание проекта
 
 ---
 
-### 3.10. Авторизация
+## 3. Создание `README.md` в корне проекта
 
-- [x] Выбор механизма: JWT access tokens через FastAPI
-- [x] Модели пользователей — in-memory store для MVP
-- [x] Эндпоинты аутентификации:
-    - [x] `POST /auth/register` — регистрация
-    - [x] `POST /auth/login` — вход, выдача JWT
-    - [x] `GET /auth/me` — информация о текущем пользователе
-- [x] Защита эндпоинтов (`Depends` с JWT verification)
-- [x] Хеширование паролей (pbkdf2_sha256 via passlib)
-- [x] Секреты (JWT_SECRET) читаются из env vars (dev default только для локальной разработки)
-- [x] Интеграция авторизации с S3-операциями (`/files/*` защищены JWT)
-- [x] Тесты:
-    - [x] Успешный login
-    - [x] Доступ к защищённым endpoint без токена → 401
-    - [x] Доступ с невалидным токеном → 401
-    - [x] Регистрация + авторизация (happy path)
+### 3.1. Структура README
 
----
+- [x] Заголовок и краткое описание проекта
+- [x] Технологический стек (backend, frontend, infrastructure)
+- [x] Быстрый старт (клонирование, venv, install, docker compose up)
+- [x] Таблица API endpoints (method, auth, description)
+- [x] Инструкция по тестированию (ruff, pytest)
+- [x] Ссылки на документацию (`docs/`)
+- [x] Таблица переменных окружения
+- [x] Warning о production defaults
+- [x] Лицензия
 
-### 3.11. Интеграционное тестирование и верификация
+### 3.2. Требования к содержанию
 
-- [x] Локальное тестирование:
-    - [x] `docker compose up` поднимает полный стек (app + nginx + minio + frontend)
-    - [x] React-фронтенд доступен через Nginx (`GET /` возвращает `index.html`)
-    - [x] Авторизация работает end-to-end (register / login / me / 401)
-    - [x] Загрузка / скачивание / удаление файлов через API
-    - [x] Логи не содержат секретов (пароли передаются в JSON body, не в query string)
-- [x] Интеграционные тесты Ansible:
-    - [x] Синтаксис playbook валиден (YAML check)
-    - [ ] Прогон playbook на тестовом хосте (требуется Linux хост)
-    - [ ] Повторный прогон подтверждает идемпотентность
-- [x] Security checklist:
-    - [x] Нет hardcoded credentials (dev defaults только для локальной разработки)
-    - [x] Нет секретов в репозитории (`.env` в `.gitignore`)
-    - [x] JWT_SECRET в env vars, не в коде
-    - [x] Пароли захешированы (pbkdf2_sha256 via passlib)
-    - [x] CORS настроен для dev (`allow_origins=["*"]`)
-    - [x] Версии образов зафиксированы (Dockerfile + docker-compose.yml)
-    - [x] Nginx не проксирует внутренние сервисы наружу напрямую (только `:80`)
+- [x] README должен быть на русском языке (основной язык проекта)
+- [x] Должен содержать понятные инструкции для нового разработчика
+- [x] Должен ссылаться на `docs/` для детальной информации
 
 ---
 
-## 4. Технологический стек
+## 4. Добавление coverage badge в `README.md`
 
-| Слой           | Технология                 | Версия / Требование              |
-|----------------|----------------------------|----------------------------------|
-| Язык (backend) | Python                     | >= 3.14                          |
-| Framework      | FastAPI                    | Latest stable, pinned            |
-| ORM / БД       | SQLAlchemy + Alembic       | Для хранения пользователей (MVP) |
-| Auth           | python-jose + passlib[pwd] | JWT + pbkdf2_sha256 хеширование  |
-| Server         | Uvicorn                    | Latest stable, pinned            |
-| Frontend       | React + TypeScript         | Vite, Latest stable              |
-| Proxy          | Nginx                      | Stable, pinned version           |
-| S3             | MinIO                      | Stable, pinned version           |
-| Контейнеры     | Docker + Compose           | Docker Engine >= 24.x            |
-| Автоматизация  | Ansible                    | >= 2.15, core                    |
-| Тестирование   | pytest + httpx             | Latest stable, pinned            |
-| Линтинг        | ruff + pre-commit          | Latest stable, pinned            |
+### 4.1. Установка pytest-cov
 
----
+- [x] Установить `pytest-cov` в dev-зависимости (или использовать существующее)
+- [x] Команда: `pip install pytest-cov`
 
-## 5. Требования
+### 4.2. Получение процента покрытия
 
-### Функциональные (FR)
+- [x] Запустить: `pytest tests/ --cov=app --cov-report=term-missing`
+- [x] Зафиксировать текущий процент (92%)
 
-- **FR-001**: При `GET /` приложение возвращает JSON `{"message": "Hello World"}`.
-- **FR-002**: Nginx проксирует внешние HTTP-запросы к FastAPI и раздаёт статику React.
-- **FR-003**: Ansible обеспечивает полный цикл развертывания на чистом хосте.
-- **FR-004**: Пользователь может загружать, просматривать и удалять файлы в S3 через React-UI.
-- **FR-005**: Пользователь может зарегистрироваться, войти и получить доступ к защищённым ресурсам.
-- **FR-006**: Незащищённые endpoint возвращают `401 Unauthorized` без валидного JWT.
+### 4.3. Добавление badge
 
-### Нефункциональные (NFR)
-
-- **NFR-001**: Время отклика endpoint `/` не более 100 мс при локальном запросе.
-- **NFR-002**: Приложение корректно обрабатывает ошибки без падения.
-- **NFR-003**: Все изменения воспроизводимы и idempotent.
-- **NFR-004**: Нет секретов в коде, конфигурации и логах (согласно `.ai/modules/vault.md` и `security-rules.md`).
-- **NFR-005**: Логи содержат `request_id`, route, статус ответа, но не содержат чувствительных данных.
-- **NFR-006**: JWT-токены имеют TTL, refresh-токены хранятся безопасно.
-- **NFR-007**: Pre-commit hooks блокируют коммит при нарушениях ruff/pytest.
+- [x] Использовать shields.io формат: `https://img.shields.io/badge/coverage-92%25-green`
+- [x] Вставить в начало README.md под заголовком
+- [x] Badge должен отображать актуальный процент покрытия
 
 ---
 
-## 6. Сроки и контрольные точки
+## 5. Заполнение `plan/DECISIONS.md`
 
-| Этап                             | Статус               | Дата начала | Дата окончания |
-|----------------------------------|----------------------|-------------|----------------|
-| 3.1–3.6 Базовый функционал       | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
-| 3.7 Ruff + pre-commit            | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
-| 3.8 Хранилище S3 (MinIO)         | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
-| 3.9 React (file manager)         | ☑ Выполнено          | 2026-06-03  | 2026-06-03     |
-| 3.10 Авторизация                 | ☑ Выполнено          | 2026-06-04  | 2026-06-04     |
-| 3.11 Интеграционное тестирование | ☑ Частично выполнено | 2026-06-04  | 2026-06-04     |
+### 5.1. Формат ADR (Architectural Decision Records)
+
+- [x] Использовать формат из `plan_example/DECISIONS.md`
+- [x] Каждое решение должно содержать: Дата, Статус, Контекст, Решение, Обоснование, Последствия, Альтернативы
+
+### 5.2. Необходимые ADR
+
+- [x] **ADR-001**: Выбор языка программирования (Python 3.14)
+- [x] **ADR-002**: Выбор веб-фреймворка (FastAPI vs Django/Flask)
+- [x] **ADR-003**: Выбор S3-хранилища (MinIO vs AWS S3/LocalStack)
+- [x] **ADR-004**: Выбор механизма авторизации (JWT vs OAuth2/Sessions)
+- [x] **ADR-005**: Выбор алгоритма хеширования паролей (pbkdf2_sha256 vs bcrypt/argon2)
+- [x] **ADR-006**: In-memory хранилище пользователей (dict vs PostgreSQL/SQLite)
+- [x] **ADR-007**: Выбор фронтенд-стека (React+Vite vs Vue/Angular)
+- [x] **ADR-008**: Nginx reverse proxy (Nginx vs Traefik)
+- [x] **ADR-009**: Docker Compose для оркестрации (Compose vs Swarm/Kubernetes)
+
+### 5.3. Требования к содержанию
+
+- [x] Даты должны соответствовать фактическим датам принятия решений
+- [x] Статус: "Принято" для всех реализованных решений
+- [x] Альтернативы должны быть реалистичными и объяснёнными
 
 ---
 
-## 7. Риски и ограничения
+## 6. Финальная верификация
 
-| Риск                          | Митигация                                               |
-|-------------------------------|---------------------------------------------------------|
-| Несовместимость версий Docker | Фиксировать версии, тестировать на целевом хосте        |
-| Утечка секретов в репозиторий | Использовать `.gitignore`, Vault для production         |
-| Ansible не идемпотентен       | Проверять `changed=0` при повторном прогоне             |
-| Конфликт портов               | Параметризовать порты через `group_vars`                |
-| Отсутствие rollback           | Добавить `docker compose down` + backup логики          |
-| JWT_SECRET в коде             | Хранить только в Vault / env vars, никогда не коммитить |
-| CORS-уязвимости               | Жёсткий allow-list origin в production                  |
-| XSS через загружаемые файлы   | Валидация MIME-типа и расширения, Content-Disposition   |
+### 6.1. Проверки перед завершением
 
----
+- [x] `ruff check .` проходит без ошибок
+- [x] `pytest tests/ -v` — все тесты passed
+- [x] `plan/PLAN.md` создан и заполнен подробными подразделами
+- [x] Все функции документированы (docstrings)
+- [x] Каталог `docs/` содержит 6 файлов с полной документацией
+- [x] `README.md` создан в корне с coverage badge
+- [x] `plan/DECISIONS.md` содержит 9 ADR записей
 
-## 8. Критерии завершения (Definition of Done)
+### 6.2. Критерии завершения
 
-- [x] Код проходит `ruff check .` без ошибок.
-- [x] Unit-тесты проходят (`pytest`).
-- [x] `docker compose up` поднимает работающий стек.
-- [x] `curl http://<host>/` возвращает `{"message": "Hello World"}`.
-- [x] Ansible playbook выполняется без ошибок на чистом хосте (структура и синтаксис валидны).
-- [x] Повторный прогон Ansible не вносит изменений (идемпотентность).
-- [x] Pre-commit hooks установлены и блокируют коммит при ошибках.
-- [x] React-фронтенд доступен через Nginx (`index.html` + JS bundles отдаются 200).
-- [x] Загрузка / скачивание / удаление файлов работает через API (curl E2E пройден).
-- [x] Авторизация защищает API: без токена — 401, с токеном — доступ.
-- [x] JWT_SECRET и S3 credentials читаются из env vars (dev default только для локальной разработки).
-- [x] Все файлы соответствуют `.ai/*` правилам проекта.
+- [x] Все пункты `PLAN_INIT.md` выполнены
+- [x] План описывает каждый шаг подробно
+- [x] Предыдущие планы (stage_1, stage_2) не объединены с новым планом
