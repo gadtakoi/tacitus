@@ -12,12 +12,18 @@ services:
 
 ## Nginx
 
-- Порт `80` → внешний
+- Порт `80` → внешний (HTTP)
+- Порт `443` → внешний (HTTPS, опционально, через Let's Encrypt)
 - `/api/` → proxy to `app:8000/` (FastAPI routers with `/api` prefix stripped)
 - `/auth/` → proxy to `app:8000/auth/`
 - `/files/` → proxy to `app:8000/files/`
 - `/health` → proxy to `app:8000/health`
 - `/` → static React SPA (`/usr/share/nginx/html`)
+
+### HTTPS (production)
+
+SSL-сертификаты выпускаются через **Certbot** (Let's Encrypt). Подробнее см. `docs/deployment.md` → раздел «SSL / Let's
+Encrypt».
 
 ## MinIO
 
