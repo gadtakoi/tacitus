@@ -10,8 +10,8 @@ client = TestClient(app)
 
 
 def _get_token() -> str:
-    client.post("/auth/register", params={"username": "fileuser", "password": "secret"})
-    login = client.post("/auth/login", params={"username": "fileuser", "password": "secret"})
+    client.post("/auth/register", json={"username": "fileuser", "password": "secret"})
+    login = client.post("/auth/login", json={"username": "fileuser", "password": "secret"})
     return login.json()["access_token"]
 
 

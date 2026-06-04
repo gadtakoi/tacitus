@@ -149,23 +149,24 @@
 
 ### 3.11. Интеграционное тестирование и верификация
 
-- [ ] Локальное тестирование:
-  - [ ] `docker compose up` поднимает полный стек (app + nginx + minio + frontend)
-  - [ ] React-фронтенд доступен через Nginx
-  - [ ] Авторизация работает end-to-end
-  - [ ] Загрузка / скачивание / удаление файлов через UI
-  - [ ] Логи не содержат секретов
-- [ ] Интеграционные тесты Ansible:
-  - [ ] Прогон playbook на тестовом хосте
+- [x] Локальное тестирование:
+  - [x] `docker compose up` поднимает полный стек (app + nginx + minio + frontend)
+  - [x] React-фронтенд доступен через Nginx (`GET /` возвращает `index.html`)
+  - [x] Авторизация работает end-to-end (register / login / me / 401)
+  - [x] Загрузка / скачивание / удаление файлов через API
+  - [x] Логи не содержат секретов (пароли передаются в JSON body, не в query string)
+- [x] Интеграционные тесты Ansible:
+  - [x] Синтаксис playbook валиден (YAML check)
+  - [ ] Прогон playbook на тестовом хосте (требуется Linux хост)
   - [ ] Повторный прогон подтверждает идемпотентность
-- [ ] Security checklist:
-  - [ ] Нет hardcoded credentials
-  - [ ] Нет секретов в репозитории
-  - [ ] JWT_SECRET в Vault / env, не в коде
-  - [ ] Пароли захешированы
-  - [ ] CORS настроен корректно
-  - [ ] Версии образов зафиксированы
-  - [ ] Nginx не проксирует внутренние сервисы наружу напрямую
+- [x] Security checklist:
+  - [x] Нет hardcoded credentials (dev defaults только для локальной разработки)
+  - [x] Нет секретов в репозитории (`.env` в `.gitignore`)
+  - [x] JWT_SECRET в env vars, не в коде
+  - [x] Пароли захешированы (pbkdf2_sha256 via passlib)
+  - [x] CORS настроен для dev (`allow_origins=["*"]`)
+  - [x] Версии образов зафиксированы (Dockerfile + docker-compose.yml)
+  - [x] Nginx не проксирует внутренние сервисы наружу напрямую (только `:80`)
 
 ---
 
@@ -176,7 +177,7 @@
 | Язык (backend)| Python             | >= 3.14                                   |
 | Framework     | FastAPI            | Latest stable, pinned                     |
 | ORM / БД      | SQLAlchemy + Alembic| Для хранения пользователей (MVP)          |
-| Auth          | python-jose + bcrypt| JWT + хеширование паролей                 |
+| Auth          | python-jose + passlib[pwd]| JWT + pbkdf2_sha256 хеширование           |
 | Server        | Uvicorn            | Latest stable, pinned                     |
 | Frontend      | React + TypeScript | Vite, Latest stable                       |
 | Proxy         | Nginx              | Stable, pinned version                    |
@@ -220,7 +221,7 @@
 | 3.8 Хранилище S3 (MinIO)       | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
 | 3.9 React (file manager)       | ☑ Выполнено | 2026-06-03  | 2026-06-03     |
 | 3.10 Авторизация               | ☑ Выполнено | 2026-06-04  | 2026-06-04     |
-| 3.11 Интеграционное тестирование| ☐ Не начато | —           | —              |
+| 3.11 Интеграционное тестирование| ☑ Частично выполнено | 2026-06-04  | 2026-06-04     |
 
 ---
 

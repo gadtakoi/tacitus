@@ -67,7 +67,11 @@ export const authApi = {
   login: (username: string, password: string) =>
     apiFetch<{ access_token: string; token_type: string }>("/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ username, password }),
+      body: JSON.stringify({ username, password }),
+    }),
+  register: (username: string, password: string) =>
+    apiFetch<{ username: string; message: string }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
     }),
 };

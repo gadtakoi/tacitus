@@ -30,7 +30,7 @@ docker compose up -d
 
 ### 3.1 Регистрация
 ```bash
-curl -s -X POST "http://localhost/auth/register?username=demo&password=demopass"
+curl -s -X POST -H "Content-Type: application/json" -d '{"username":"demo","password":"demopass"}' http://localhost/auth/register
 ```
 - [ ] HTTP `201 Created`
 - [ ] Тело: `{"username":"demo","message":"User registered successfully"}`
@@ -44,7 +44,7 @@ curl -s -X POST "http://localhost/auth/register?username=demo&password=demopass"
 
 ### 3.3 Логин
 ```bash
-curl -s -X POST "http://localhost/auth/login?username=demo&password=demopass"
+curl -s -X POST -H "Content-Type: application/json" -d '{"username":"demo","password":"demopass"}' http://localhost/auth/login
 ```
 - [ ] HTTP `200 OK`
 - [ ] Тело содержит `"access_token"` и `"token_type":"bearer"`
@@ -139,7 +139,7 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost/files/READM
 
 - [ ] В логах контейнера `tacitus-app` (`docker compose logs app`) **отсутствуют**:
   - JWT-токены
-  - Пароли в plaintext
+  - Пароли в plaintext (убедиться, что auth endpoints принимают JSON body, а не query params)
   - S3 secret keys
 - [ ] В логах присутствуют:
   - `request_id`

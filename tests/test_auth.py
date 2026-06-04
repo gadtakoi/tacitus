@@ -11,7 +11,7 @@ client = TestClient(app)
 
 def test_register_success() -> None:
     """Test successful user registration."""
-    response = client.post("/auth/register", params={"username": "testuser", "password": "secret"})
+    response = client.post("/auth/register", json={"username": "testuser", "password": "secret"})
     assert response.status_code == 201
     data = response.json()
     assert data["username"] == "testuser"
@@ -19,15 +19,15 @@ def test_register_success() -> None:
 
 def test_register_duplicate() -> None:
     """Test registration with duplicate username."""
-    client.post("/auth/register", params={"username": "dupuser", "password": "secret"})
-    response = client.post("/auth/register", params={"username": "dupuser", "password": "secret"})
+    client.post("/auth/register", json={"username": "dupuser", "password": "secret"})
+    response = client.post("/auth/register", json={"username": "dupuser", "password": "secret"})
     assert response.status_code == 400
 
 
 def test_login_success() -> None:
     """Test successful login returns JWT."""
-    client.post("/auth/register", params={"username": "loginuser", "password": "secret"})
-    response = client.post("/auth/login", params={"username": "loginuser", "password": "secret"})
+    client.post("/auth/register", json={"username": "loginuser", "password": "secret"})
+    response = client.post("/auth/login", json={"username": "loginuser", "password": "secret"})
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -36,8 +36,8 @@ def test_login_success() -> None:
 
 def test_login_wrong_password() -> None:
     """Test login with wrong password returns 401."""
-    client.post("/auth/register", params={"username": "wrongpass", "password": "secret"})
-    response = client.post("/auth/login", params={"username": "wrongpass", "password": "bad"})
+    client.post("/auth/register", json={"username": "wrongpass", "password": "secret"})
+    response = client.post("/auth/login", json={"username": "wrongpass", "password": "bad"})
     assert response.status_code == 401
 
 
@@ -57,8 +57,8 @@ def test_protected_endpoint_with_invalid_token() -> None:
 def test_protected_endpoint_with_valid_token(mock_s3: MagicMock) -> None:
     """Test accessing protected endpoint with valid token."""
     mock_s3.list_files.return_value = []
-    client.post("/auth/register", params={"username": "tokenuser", "password": "secret"})
-    login = client.post("/auth/login", params={"username": "tokenuser", "password": "secret"})
+    client.post("/auth/register", json={"username": "tokenuser", "password": "secret"})
+    login = client.post("/auth/login", json={"username": "tokenuser", "password": "secret"})
     token = login.json()["access_token"]
     response = client.get("/files/", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -67,8 +67,8 @@ def test_protected_endpoint_with_valid_token(mock_s3: MagicMock) -> None:
 
 def test_auth_me() -> None:
     """Test fetching current authenticated user."""
-    client.post("/auth/register", params={"username": "meuser", "password": "secret"})
-    login = client.post("/auth/login", params={"username": "meuser", "password": "secret"})
+    client.post("/auth/register", json={"username": "meuser", "password": "secret"})
+    login = client.post("/auth/login", json={"username": "meuser", "password": "secret"})
     token = login.json()["access_token"]
     response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
