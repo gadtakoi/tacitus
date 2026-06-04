@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routers.auth import router as auth_router
 from app.api.routers.files import router as files_router
 from app.api.routers.hello import router as hello_router
 from app.core.config import settings
@@ -24,6 +25,7 @@ app.add_middleware(
 app.add_exception_handler(AppError, app_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(hello_router)
+app.include_router(auth_router)
 app.include_router(files_router)
 
 

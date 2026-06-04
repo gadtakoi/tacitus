@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     s3_bucket: str = "tacitus-files"
 
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_minutes: int = 30
+
     class Config:
         env_prefix = "TACITUS_"
 
