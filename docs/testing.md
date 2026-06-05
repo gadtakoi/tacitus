@@ -26,13 +26,13 @@ pre-commit run --all-files
 
 ## Структура тестов
 
-| Файл | Что тестируется |
-|------|-----------------|
-| `test_hello.py` | Hello World endpoint |
-| `test_health.py` | Health check |
-| `test_auth.py` | Регистрация, логин, JWT, 401 |
+| Файл                   | Что тестируется                |
+|------------------------|--------------------------------|
+| `test_hello.py`        | Hello World endpoint           |
+| `test_health.py`       | Health check                   |
+| `test_auth.py`         | Регистрация, логин, JWT, 401   |
 | `test_files_router.py` | Защищённые endpoints (mock S3) |
-| `test_s3_service.py` | S3Service (mock boto3) |
+| `test_s3_service.py`   | S3Service (mock boto3)         |
 
 ## Покрытие
 

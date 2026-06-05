@@ -15,10 +15,10 @@ docker compose up -d
 ```
 
 - [ ] Все 4 сервиса в статусе `Up` (`docker compose ps`):
-  - `tacitus-app`
-  - `tacitus-nginx`
-  - `tacitus-minio`
-  - `tacitus-minio-init` (завершился с `Exit 0`)
+    - `tacitus-app`
+    - `tacitus-nginx`
+    - `tacitus-minio`
+    - `tacitus-minio-init` (завершился с `Exit 0`)
 
 ## 2. Health checks
 
@@ -29,97 +29,123 @@ docker compose up -d
 ## 3. Аутентификация (API)
 
 ### 3.1 Регистрация
+
 ```bash
 curl -s -X POST -H "Content-Type: application/json" -d '{"username":"demo","password":"demopass"}' http://localhost/auth/register
 ```
+
 - [ ] HTTP `201 Created`
 - [ ] Тело: `{"username":"demo","message":"User registered successfully"}`
 
 ### 3.2 Повторная регистрация
+
 ```bash
 curl -s -X POST "http://localhost/auth/register?username=demo&password=demopass"
 ```
+
 - [ ] HTTP `400 Bad Request`
 - [ ] Тело содержит `"Username already registered"`
 
 ### 3.3 Логин
+
 ```bash
 curl -s -X POST -H "Content-Type: application/json" -d '{"username":"demo","password":"demopass"}' http://localhost/auth/login
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Тело содержит `"access_token"` и `"token_type":"bearer"`
 
 ### 3.4 Логин с неверным паролем
+
 ```bash
 curl -s -X POST "http://localhost/auth/login?username=demo&password=wrong"
 ```
+
 - [ ] HTTP `401 Unauthorized`
 
 ### 3.5 Получение текущего пользователя
+
 ```bash
 TOKEN=$(curl -s -X POST "http://localhost/auth/login?username=demo&password=demopass" | jq -r '.access_token')
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost/auth/me
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Тело: `{"username":"demo"}`
 
 ### 3.6 Доступ без токена
+
 ```bash
 curl -s http://localhost/auth/me
 ```
+
 - [ ] HTTP `401 Unauthorized`
 - [ ] Заголовок ответа содержит `WWW-Authenticate: Bearer`
 
 ## 4. Защита файловых эндпоинтов
 
 ### 4.1 Без токена
+
 ```bash
 curl -s http://localhost/files/
 ```
+
 - [ ] HTTP `401 Unauthorized`
 
 ### 4.2 С невалидным токеном
+
 ```bash
 curl -s -H "Authorization: Bearer invalid" http://localhost/files/
 ```
+
 - [ ] HTTP `401 Unauthorized`
 
 ### 4.3 С валидным токеном
+
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost/files/
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Тело: `{"files":[]}` (или список файлов, если есть)
 
 ## 5. CRUD файлов (через API)
 
 ### 5.1 Загрузка файла
+
 ```bash
 curl -s -X POST -H "Authorization: Bearer $TOKEN" \
   -F "file=@README.md" \
   http://localhost/files/upload
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Тело содержит `"filename":"README.md"`
 
 ### 5.2 Список файлов
+
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost/files/
 ```
+
 - [ ] Тело содержит `"README.md"` в массиве `files`
 
 ### 5.3 Получение presigned URL
+
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost/files/README.md
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Тело содержит `"url"` (ссылка на MinIO)
 - [ ] Переход по ссылке отдаёт файл (HTTP `200` + содержимое)
 
 ### 5.4 Удаление файла
+
 ```bash
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost/files/README.md
 ```
+
 - [ ] HTTP `200 OK`
 - [ ] Повторный `GET /files/` не содержит `README.md`
 
@@ -138,14 +164,14 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost/files/READM
 ## 7. Безопасность и логи
 
 - [ ] В логах контейнера `tacitus-app` (`docker compose logs app`) **отсутствуют**:
-  - JWT-токены
-  - Пароли в plaintext (убедиться, что auth endpoints принимают JSON body, а не query params)
-  - S3 secret keys
+    - JWT-токены
+    - Пароли в plaintext (убедиться, что auth endpoints принимают JSON body, а не query params)
+    - S3 secret keys
 - [ ] В логах присутствуют:
-  - `request_id`
-  - Маршрут (`route`)
-  - HTTP статус
-  - Имя пользователя (без пароля)
+    - `request_id`
+    - Маршрут (`route`)
+    - HTTP статус
+    - Имя пользователя (без пароля)
 
 ## 8. MinIO Console (опционально)
 
@@ -158,6 +184,7 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost/files/READM
 ```bash
 docker compose down -v
 ```
+
 - [ ] Все контейнеры остановлены.
 - [ ] Volume `minio-data` удалён (флаг `-v`).
 

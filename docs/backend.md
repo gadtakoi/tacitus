@@ -48,6 +48,7 @@ pip install -e ".[dev]"
 ```
 
 Переменные окружения (префикс `TACITUS_`):
+
 - `JWT_SECRET` — обязательно переопределить в production
 - `JWT_ALGORITHM` — по умолчанию `HS256`
 - `JWT_EXPIRATION_MINUTES` — по умолчанию `30`

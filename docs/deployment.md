@@ -6,64 +6,207 @@
 docker compose up -d
 ```
 
-## Ansible
+---
 
-Плейбук: `ansible/playbook.yml`
+## Развёртывание через Ansible
 
-Роли:
+Ansible-плейбук автоматически устанавливает Docker, копирует код проекта на сервер, создаёт файл окружения `.env` и
+запускает приложение через `docker compose`. При необходимости получает SSL-сертификат Let's Encrypt и настраивает
+HTTPS.
 
-- `docker_install` — установка Docker Engine
-- `ssl_cert` — установка и получение SSL-сертификата Let's Encrypt (опционально)
-- `app_deploy` — клонирование репозитория, `docker compose up`
-- `nginx_ssl` — генерация nginx конфигурации с HTTPS (опционально)
+### Требования
+
+**На управляющей машине (ваш ПК):**
+
+- Python 3.10+
+- Ansible 2.14+
+
+**На целевом сервере:**
+
+- Ubuntu 20.04+ / Debian 11+ (роль `docker_install` заточена под `apt`)
+- SSH-доступ с правами `sudo` (безпарольный `sudo` или пароль через `--ask-become-pass`)
+- Открытые порты: 80 и (опционально) 443
+
+### Установка Ansible
 
 ```bash
-ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml
+pip install ansible
 ```
 
-## SSL / Let's Encrypt (Certbot)
+### Проверка доступности хоста
 
-Для production-деплоя с HTTPS используется **Certbot** в standalone-режиме.
+```bash
+cd ansible
+ansible -i inventory/hosts.yml tacitus -m ping \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root
+```
 
-### Переменные (ansible/group_vars/all.yml)
+Если подключаетесь по паролю:
 
-| Переменная            | Значение по умолчанию | Описание                                    |
-|-----------------------|-----------------------|---------------------------------------------|
-| `nginx_ssl_enabled`   | `false`               | Включить HTTPS                              |
-| `nginx_domain`        | `tacitus.example.com` | Домен для сертификата                       |
-| `certbot_admin_email` | `admin@example.com`   | Email для Let's Encrypt                     |
-| `certbot_staging`     | `true`                | Использовать staging окружение (для тестов) |
+```bash
+ansible -i inventory/hosts.yml tacitus -m ping \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password
+```
 
-### Как это работает
+### Базовый деплой (HTTP, без домена)
 
-1. **Условное включение**: роли `ssl_cert` и `nginx_ssl` выполняются только если `nginx_ssl_enabled: true`.
-2. **Получение сертификата**: certbot в standalone-режиме временно занимает порт 80, проходит ACME-валидацию и сохраняет
-   сертификаты в `/etc/letsencrypt/live/{{ nginx_domain }}/`.
-3. **Nginx конфигурация**: шаблон `ansible/roles/nginx_ssl/templates/nginx.conf.j2` генерирует:
-    - Редирект с HTTP (80) → HTTPS (443) с кодом 301
-    - HTTPS-сервер с `listen 443 ssl http2`, TLS 1.2/1.3, строгими шифрами
-    - Пути к `fullchain.pem` и `privkey.pem`
-4. **Docker volume**: сертификаты монтируются в контейнер nginx через bind mount:
-   ```yaml
-   volumes:
-     - /etc/letsencrypt:/etc/letsencrypt:ro
-   ```
-5. **Автообновление**: cron задача запускается каждый день в 3:00:
-   ```
-   certbot renew --quiet --deploy-hook 'docker compose ... exec nginx nginx -s reload'
-   ```
-   После успешного обновления nginx получает сигнал reload.
+Минимальная команда — только IP, логин и пароль:
 
-### Первый запуск (staging → production)
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password
+```
 
-1. Убедитесь, что DNS A-запись домена указывает на сервер.
-2. Установите `certbot_staging: true` и запустите плейбук — проверьте, что certbot отрабатывает без ошибок.
-3. Переключите `certbot_staging: false` и запустите повторно — получите валидный сертификат.
+Если на сервере `sudo` требует пароль:
 
-### Ограничения standalone-режима
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=ubuntu \
+  -e deploy_password=your_password \
+  --ask-become-pass
+```
 
-Standalone требует временного занятия порта 80. Если на сервере уже работает nginx, используйте `--webroot` (требует
-`location /.well-known/acme-challenge/` в конфиге) или временно остановите nginx перед выпуском сертификата.
+Если используете SSH-ключ вместо пароля:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  --private-key ~/.ssh/id_rsa
+```
+
+### Деплой с HTTPS (домен + SSL)
+
+Добавьте доменное имя и включите HTTPS:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  -e tacitus_enable_https=true \
+  -e tacitus_domain=example.com \
+  -e tacitus_email=admin@example.com
+```
+
+**Важно:** до запуска убедитесь, что DNS A-запись `example.com` указывает на IP сервера (`1.2.3.4`).
+
+#### Staging → Production сертификат
+
+Let's Encrypt имеет лимиты на количество запросов. Для первых тестов рекомендуется staging:
+
+```bash
+# 1. Тестовый сертификат (staging)
+ansible-playbook ... -e ssl_certbot_staging=true
+
+# 2. Если всё ок — получаем реальный сертификат
+ansible-playbook ... -e ssl_certbot_staging=false
+```
+
+### Передача секретов
+
+По умолчанию `.env.j2` использует dev-значения. **В production их обязательно переопределяйте:**
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  -e tacitus_jwt_secret="$(openssl rand -hex 32)" \
+  -e tacitus_s3_access_key="$(openssl rand -hex 16)" \
+  -e tacitus_s3_secret_key="$(openssl rand -hex 32)"
+```
+
+> ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` или используйте Ansible Vault:
+> ```bash
+> ansible-vault create ansible/group_vars/production.yml
+> ansible-playbook ... --ask-vault-pass
+> ```
+
+### Переменные плейбука
+
+| Переменная              | По умолчанию              | Описание                              |
+|-------------------------|---------------------------|---------------------------------------|
+| `target_host`           | `localhost`               | IP или домен целевого сервера         |
+| `deploy_user`           | `ansible`                 | SSH-пользователь                      |
+| `deploy_password`       | —                         | SSH-пароль (если не используете ключ) |
+| `tacitus_enable_https`  | `false`                   | Включить HTTPS и Let's Encrypt        |
+| `tacitus_domain`        | `""`                      | Домен для сертификата                 |
+| `tacitus_email`         | `admin@example.com`       | Email для Let's Encrypt               |
+| `ssl_certbot_staging`   | `false`                   | Staging-режим Certbot                 |
+| `tacitus_jwt_secret`    | `change-me-in-production` | JWT-секрет приложения                 |
+| `tacitus_s3_access_key` | `minioadmin`              | S3 access key                         |
+| `tacitus_s3_secret_key` | `minioadmin`              | S3 secret key                         |
+| `tacitus_deploy_dir`    | `/opt/tacitus`            | Путь установки на сервере             |
+
+Полный список — в файлах `ansible/group_vars/all.yml` и `ansible/roles/*/defaults/main.yml`.
+
+### Выборочный запуск (теги)
+
+| Тег      | Что делает                                       |
+|----------|--------------------------------------------------|
+| `docker` | Только установка Docker                          |
+| `ssl`    | Только получение/обновление SSL                  |
+| `app`    | Только копирование кода и перезапуск контейнеров |
+
+Пример — обновить только код без переустановки Docker:
+
+```bash
+ansible-playbook ... --tags app
+```
+
+### Обновление приложения
+
+Повторный запуск того же плейбука — идемпотентен. Он скопирует изменения из репозитория и перезапустит контейнеры:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password
+```
+
+### Структура ролей
+
+- **`docker_install`** — устанавливает Docker Engine и Docker Compose plugin (только Debian/Ubuntu), добавляет
+  пользователя в группу `docker`.
+- **`ssl_cert`** — устанавливает Certbot, получает SSL-сертификат через webroot-режим, деплоит nginx-конфиг с HTTPS,
+  настраивает автообновление по cron.
+- **`app_deploy`** — создаёт директорию `/opt/tacitus`, копирует исходный код, Dockerfile, docker-compose.yml, рендерит
+  `.env` из шаблона, запускает `docker compose up --build -d`.
+
+### Устранение неполадок
+
+**«Authentication or permission failure»**
+
+- Проверьте пароль: `ansible ... -m ping -e deploy_password=...`
+- Убедитесь, что пользователь есть в `sudoers` без пароля: `your_user ALL=(ALL) NOPASSWD:ALL`
+- Или добавьте `--ask-become-pass`
+
+**«Could not resolve host» при получении сертификата**
+
+- DNS A-запись должна быть настроена до запуска плейбука
+- Проверьте: `dig +short example.com`
+
+**«urn:ietf:params:acme:error:rateLimited»**
+
+- Превышен лимит Let's Encrypt. Переключитесь на staging: `-e ssl_certbot_staging=true`
+
+**Приложение не стартует после деплоя**
+
+- Проверьте логи на сервере:
+  ```bash
+  ssh root@1.2.3.4 "cd /opt/tacitus && docker compose logs -f app"
+  ```
+- Убедитесь, что JWT_SECRET ≥ 8 символов и все обязательные переменные заданы
+
+---
 
 ## Переменные окружения (production)
 
@@ -75,6 +218,7 @@ TACITUS_S3_ACCESS_KEY=<minio-access-key>
 TACITUS_S3_SECRET_KEY=<minio-secret-key>
 ```
 
-- Секреты хранить только в утверждённом secret manager (например, HashiCorp Vault, AWS Secrets Manager, или переменные окружения хоста)
+- Секреты хранить только в утверждённом secret manager (например, HashiCorp Vault, AWS Secrets Manager, или переменные
+  окружения хоста)
 - Никогда не коммитить `.env` (уже в `.gitignore`)
 - Не логировать секреты
