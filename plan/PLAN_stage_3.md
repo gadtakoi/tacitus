@@ -105,7 +105,7 @@
 - [x] Локальный запуск (`docker compose up -d`)
 - [x] Ansible playbook (структура, роли, запуск)
 - [x] Переменные окружения для production (JWT_SECRET, S3 credentials)
-- [x] Vault integration (согласно `.ai/modules/vault.md`)
+- [x] Управление секретами через переменные окружения и secret manager
 
 ### 2.7. Содержание `docs/index.md`
 

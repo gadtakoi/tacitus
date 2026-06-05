@@ -75,10 +75,6 @@ TACITUS_S3_ACCESS_KEY=<minio-access-key>
 TACITUS_S3_SECRET_KEY=<minio-secret-key>
 ```
 
-## Vault
-
-Согласно `.ai/modules/vault.md`:
-
-- Секреты хранить только в Vault или утверждённом secret manager
+- Секреты хранить только в утверждённом secret manager (например, HashiCorp Vault, AWS Secrets Manager, или переменные окружения хоста)
 - Никогда не коммитить `.env` (уже в `.gitignore`)
 - Не логировать секреты
