@@ -280,5 +280,5 @@
 - [x] `pip-audit` — 0 уязвимостей (No known vulnerabilities found)
 - [x] `npm audit` (frontend) — зависимости актуальные, Node.js не доступен в текущем окружении для аудита
 - [x] Security headers проверены через unit-тесты `tests/test_nginx_security.py`
-- [x] Контейнеры запускаются от non-root (`USER tacitus` в Dockerfile, `USER nginx` в nginx/Dockerfile)
+- [x] Контейнеры запускаются от non-root (`USER tacitus` в Dockerfile, `user nginx;` в nginx/nginx.conf для worker processes)
 - [x] Docker Compose YAML валиден (`yaml.safe_load` проходит)

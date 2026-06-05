@@ -180,7 +180,7 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 ### 7.1 Non-root Containers
 
 - **App:** `USER tacitus` (uid 1000) в `Dockerfile`
-- **Nginx:** `USER nginx` в `nginx/Dockerfile`
+- **Nginx:** `user nginx;` в `nginx/nginx.conf` (worker processes от непривилегированного пользователя, master process от root для управления портами и privileges)
 
 ### 7.2 Read-only Root Filesystem
 
@@ -194,7 +194,10 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 cap_drop:
   - ALL
 cap_add:
-  - NET_BIND_SERVICE  # только для nginx
+  - NET_BIND_SERVICE  # bind to port 80/443
+  - CHOWN              # chown nginx temp dirs
+  - SETUID             # drop privileges to worker user
+  - SETGID             # drop privileges to worker user
 ```
 
 ### 7.4 Resource Limits
@@ -308,11 +311,3 @@ python scripts/generate-sbom.py
 - [ ] `.env` недоступен через nginx
 
 ---
-
-## Контакты
-
-- **Security Team:** security@example.com
-- **On-call:** +1-555-SECURITY
-- **Escalation:** CTO / DevOps lead
-
-> Замените контакты на реальные перед использованием в production.
