@@ -1,9 +1,15 @@
 """Shared test fixtures."""
 
-import pytest
+import os
 
-from app.core.rate_limit import limiter
-from app.services import auth_service
+os.environ.setdefault("TACITUS_S3_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("TACITUS_S3_SECRET_KEY", "minioadmin")
+os.environ.setdefault("TACITUS_JWT_SECRET", "change-me-in-production")
+
+import pytest  # noqa: E402
+
+from app.core.rate_limit import limiter  # noqa: E402
+from app.services import auth_service  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

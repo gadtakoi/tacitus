@@ -141,21 +141,15 @@
 
 ### 5.1. Remove Dev Defaults from Code
 
-- [ ] Удалить dev defaults для чувствительных переменных из `app/core/config.py`:
+- [x] Удалить dev defaults для чувствительных переменных из `app/core/config.py`:
   ```python
   # Было:
   s3_access_key: str = "minioadmin"
   # Стало:
   s3_access_key: str = Field(..., min_length=8)
   ```
-- [ ] Сделать `jwt_secret` обязательным без дефолта
-- [ ] Обновить `.env.example` с явными dev-значениями для локальной разработки
-
-### 5.2. Vault Integration Path
-
-- [ ] Добавить `app/core/vault.py` — адаптер для HashiCorp Vault (stub/интерфейс)
-- [ ] При `VAULT_ADDR` определённом — загружать секреты из Vault вместо env vars
-- [ ] Логировать факт обращения к Vault без раскрытия значений (согласно `.ai/modules/vault.md`)
+- [x] Сделать `jwt_secret` обязательным без дефолта
+- [x] Обновить `.env.example` с явными dev-значениями для локальной разработки
 
 ---
 

@@ -1,6 +1,6 @@
 """Application configuration."""
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -15,13 +15,13 @@ class Settings(BaseSettings):
     port: int = 8000
     environment: str = "development"
 
-    # Dev defaults — override via env vars in production
+    # S3 settings — no dev defaults in code, use .env
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = Field(..., min_length=8)
+    s3_secret_key: str = Field(..., min_length=8)
     s3_bucket: str = "tacitus-files"
 
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = Field(...)
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 15
     jwt_refresh_expiration_days: int = 7
@@ -41,9 +41,6 @@ def validate_startup_settings() -> None:
     if settings.environment == "production":
         if len(settings.jwt_secret) < 32:
             msg = "JWT secret must be at least 32 characters in production"
-            raise RuntimeError(msg)
-        if settings.jwt_secret == "change-me-in-production":
-            msg = "Default JWT secret is not allowed in production"
             raise RuntimeError(msg)
         if settings.s3_access_key == "minioadmin" or settings.s3_secret_key == "minioadmin":
             msg = "Default MinIO credentials are not allowed in production"
