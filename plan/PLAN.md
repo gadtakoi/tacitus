@@ -260,7 +260,7 @@
 
 ### 10.1. Security Runbook
 
-- [ ] Добавить `docs/security.md`:
+- [x] Добавить `docs/security.md`:
   - Чек-лист деплоя (secrets, HTTPS, headers)
   - Как ротировать JWT secret
   - Как реагировать на compromise (token revocation)
@@ -268,8 +268,8 @@
 
 ### 10.2. Secret Rotation Guide
 
-- [ ] Описать процесс ротации `jwt_secret` без downtime
-- [ ] Описать процесс ротации S3 credentials
+- [x] Описать процесс ротации `jwt_secret` без downtime
+- [x] Описать процесс ротации S3 credentials
 
 ---
 
