@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.dependencies import get_current_user
 from app.core.rate_limit import limiter
+from app.core.security_logging import log_security_event
 from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -19,6 +20,7 @@ from app.services.auth_service import (
     authenticate_user,
     create_access_token,
     create_refresh_token,
+    decode_access_token,
     decode_refresh_token,
     get_refresh_token,
     is_brute_force_locked,
@@ -52,9 +54,10 @@ async def auth_register(request: Request, body: RegisterRequest) -> UserResponse
         Registration confirmation.
     """
     request_id = getattr(request.state, "request_id", "unknown")
+    client_ip = _get_client_ip(request)
     logger.info("Registering user", extra={"request_id": request_id, "username": body.username})
     try:
-        register_user(body.username, body.password)
+        register_user(body.username, body.password, client_ip)
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message) from e
     return UserResponse(username=body.username, message="User registered successfully")
@@ -93,13 +96,11 @@ async def auth_login(request: Request, body: LoginRequest) -> TokenResponse:
     access_token = create_access_token({"sub": user["username"]})
     refresh_token = create_refresh_token({"sub": user["username"]})
     store_refresh_token(refresh_token, user["username"])
-    logger.info(
-        "Login successful",
-        extra={
-            "request_id": request_id,
-            "username": body.username,
-            "event_type": "auth.login.success",
-        },
+    log_security_event(
+        "auth.login.success",
+        ip=client_ip,
+        user=user["username"],
+        extra={"request_id": request_id},
     )
     return TokenResponse(
         access_token=access_token,
@@ -173,9 +174,13 @@ async def auth_logout(
             headers={"WWW-Authenticate": "Bearer"},
         )
     revoke_access_token(credentials.credentials)
-    logger.info(
-        "Token revoked",
-        extra={"request_id": request_id, "event_type": "auth.token.revoked"},
+    payload = decode_access_token(credentials.credentials)
+    username = payload.get("sub") if payload else None
+    log_security_event(
+        "auth.token.revoked",
+        ip=_get_client_ip(request),
+        user=username,
+        extra={"request_id": request_id},
     )
     return {"message": "Logged out successfully"}
 

@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
+from app.core.security_logging import log_security_event
 
 logger = logging.getLogger(__name__)
 
@@ -190,22 +191,21 @@ def record_failed_login(username: str, client_ip: str) -> None:
     now = datetime.now(UTC)
     with _brute_lock:
         _failed_attempts.setdefault(username, []).append(now)
-    logger.warning(
-        "Failed login attempt",
-        extra={
-            "username": username,
-            "ip": client_ip,
-            "event_type": "auth.login.failed",
-        },
+    log_security_event(
+        "auth.login.failed",
+        severity="warning",
+        ip=client_ip,
+        user=username,
     )
 
 
-def register_user(username: str, password: str) -> dict[str, Any]:
+def register_user(username: str, password: str, client_ip: str) -> dict[str, Any]:
     """Register a new user.
 
     Args:
         username: Unique username.
         password: Plain text password.
+        client_ip: Client IP address.
 
     Returns:
         User data dict.
@@ -217,7 +217,7 @@ def register_user(username: str, password: str) -> dict[str, Any]:
         raise AuthError("Username already registered")
     user = {"username": username, "hashed_password": hash_password(password)}
     _users[username] = user
-    logger.info("User registered", extra={"username": username, "event_type": "auth.register"})
+    log_security_event("auth.register", ip=client_ip, user=username)
     return {"username": username}
 
 

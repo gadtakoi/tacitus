@@ -157,20 +157,20 @@
 
 ### 6.1. Security Events Logging
 
-- [ ] Добавить dedicated security logger (`app.core.security_logging`)
-- [ ] Логировать события:
+- [x] Добавить dedicated security logger (`app.core.security_logging`)
+- [x] Логировать события:
   - `auth.login.success` / `auth.login.failed` (username, IP, user-agent)
   - `auth.register` (username, IP)
   - `auth.token.revoked` (username)
   - `file.upload` (filename, size, user)
   - `file.delete` (filename, user)
   - `rate_limit.exceeded` (endpoint, IP)
-- [ ] Формат: JSON structured logging с полями `event_type`, `severity`, `ip`, `user`
+- [x] Формат: JSON structured logging с полями `event_type`, `severity`, `ip`, `user`
 
 ### 6.2. Suspicious Activity Detection
 
-- [ ] Добавить in-memory счётчик подозрительных запросов по IP
-- [ ] При >100 401/403 ответов за 5 минут — логировать `security.suspicious_activity`
+- [x] Добавить in-memory счётчик подозрительных запросов по IP
+- [x] При >100 401/403 ответов за 5 минут — логировать `security.suspicious_activity`
 - [ ] (Future) Интеграция с fail2ban или WAF
 
 ---

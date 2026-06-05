@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
 from app.api.dependencies import get_current_user
 from app.core.rate_limit import get_user_or_ip, limiter
+from app.core.security_logging import log_security_event
 from app.schemas.files import (
     FileDeleteResponse,
     FileListResponse,
@@ -105,14 +106,12 @@ async def upload_file(
             detail="File extension does not match content type",
         )
 
-    logger.info(
-        "Uploading file",
-        extra={
-            "request_id": request_id,
-            "file_name": sanitized,
-            "size": len(content),
-            "user": current_user,
-        },
+    log_security_event(
+        "file.upload",
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else "unknown"),
+        user=current_user,
+        extra={"request_id": request_id, "file_name": sanitized, "size": len(content)},
     )
     s3_service.upload_file(sanitized, content)
     return FileUploadResponse(filename=sanitized)
@@ -189,9 +188,12 @@ async def delete_file(
     """
     request_id = getattr(request.state, "request_id", "unknown")
     sanitized = _validate_filename(filename)
-    logger.info(
-        "Deleting file",
-        extra={"request_id": request_id, "file_name": sanitized, "user": current_user},
+    log_security_event(
+        "file.delete",
+        ip=request.headers.get("x-forwarded-for")
+        or (request.client.host if request.client else "unknown"),
+        user=current_user,
+        extra={"request_id": request_id, "file_name": sanitized},
     )
     s3_service.delete_file(sanitized)
     return FileDeleteResponse(filename=sanitized)
