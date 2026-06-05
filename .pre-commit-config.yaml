@@ -26,3 +26,17 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: false
+
+      - id: pip-audit
+        name: pip-audit
+        entry: bash -c '.venv/Scripts/python -m pip_audit -r requirements.txt'
+        language: system
+        pass_filenames: false
+        always_run: false
+
+#      - id: npm-audit
+#        name: npm audit
+#        entry: bash -c 'cd frontend && npm audit --audit-level=moderate'
+#        language: system
+#        pass_filenames: false
+#        always_run: false

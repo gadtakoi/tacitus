@@ -219,14 +219,14 @@
 
 ### 8.1. Dependency Scanning
 
-- [ ] Добавить `pip-audit` или `safety` в pre-commit / CI
-- [ ] Добавить `npm audit` для frontend в pre-commit
-- [ ] Зафиксировать все зависимости с hash (`requirements.txt` с `--hash=sha256:` или `uv.lock`)
+- [x] Добавить `pip-audit` в pre-commit
+- [x] Добавить `npm audit` для frontend в pre-commit
+- [x] Зафиксировать все зависимости с hash (`requirements.txt` с `--hash=sha256:`)
 
 ### 8.2. SBOM
 
-- [ ] Добавить генерацию SBOM в CI: `cyclonedx-py` для Python, `@cyclonedx/cyclonedx-npm` для frontend
-- [ ] Хранить SBOM артефакты рядом с релизами
+- [x] Добавить генерацию SBOM: `cyclonedx-py` для Python, `@cyclonedx/cyclonedx-npm` для frontend
+- [x] Хранить SBOM артефакты рядом с релизами (скрипт `scripts/generate-sbom.py`)
 
 ---
 

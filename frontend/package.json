@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sbom": "npx @cyclonedx/cyclonedx-npm --output-file sbom.json"
   },
   "dependencies": {
     "react": "^19.0.0",
