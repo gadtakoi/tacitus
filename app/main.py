@@ -2,19 +2,26 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.files import router as files_router
 from app.api.routers.hello import router as hello_router
-from app.core.config import settings
+from app.core.config import settings, validate_startup_settings
 from app.core.exceptions import AppError, app_exception_handler, generic_exception_handler
 from app.core.logging_config import setup_logging
 from app.core.middleware import RequestIdMiddleware
+from app.core.rate_limit import limiter
 
 setup_logging()
+validate_startup_settings()
 
 app = FastAPI(title=settings.app_name)
+app.state.limiter = limiter
 app.add_middleware(RequestIdMiddleware)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,6 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_exception_handler(AppError, app_exception_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(hello_router)
 app.include_router(auth_router)

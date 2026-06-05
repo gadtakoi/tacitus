@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
 from app.api.dependencies import get_current_user
+from app.core.rate_limit import get_user_or_ip, limiter
 from app.schemas.files import (
     FileDeleteResponse,
     FileListResponse,
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=FileListResponse)
+@limiter.limit("60/minute", key_func=get_user_or_ip)
 async def list_files(
     request: Request,
     current_user: str = Depends(get_current_user),
@@ -39,6 +41,7 @@ async def list_files(
 
 
 @router.post("/upload", response_model=FileUploadResponse)
+@limiter.limit("10/minute", key_func=get_user_or_ip)
 async def upload_file(
     request: Request,
     file: UploadFile,

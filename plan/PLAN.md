@@ -33,48 +33,48 @@
 
 ### 2.1. Rate Limiting
 
-- [ ] Установить `slowapi` (или `fastapi-limiter` на базе Redis) для rate limiting
-- [ ] Настроить лимиты:
+- [x] Установить `slowapi` для rate limiting
+- [x] Настроить лимиты:
   - `/auth/login` — 5 попыток в минуту с одного IP
   - `/auth/register` — 3 попытки в час с одного IP
   - `/files/upload` — 10 загрузок в минуту на пользователя
   - `/files/` (GET) — 60 запросов в минуту на пользователя
-- [ ] Вернуть `429 Too Many Requests` при превышении лимита
-- [ ] Добавить тесты на rate limiting
+- [x] Вернуть `429 Too Many Requests` при превышении лимита
+- [x] Добавить тесты на rate limiting
 
 ### 2.2. Brute Force Protection
 
-- [ ] Добавить счётчик неудачных попыток входа в `auth_service.py` (in-memory с TTL)
-- [ ] Временно блокировать учётную запись после 5 неудачных попыток подряд (15 минут)
-- [ ] Логировать все неудачные попытки входа с IP-адресом
+- [x] Добавить счётчик неудачных попыток входа в `auth_service.py` (in-memory с TTL)
+- [x] Временно блокировать учётную запись после 5 неудачных попыток подряд (15 минут)
+- [x] Логировать все неудачные попытки входа с IP-адресом
 
 ### 2.3. Password Policy
 
-- [ ] Добавить валидацию пароля при регистрации:
+- [x] Добавить валидацию пароля при регистрации:
   - Минимум 8 символов
   - Хотя бы одна заглавная буква
   - Хотя бы одна строчная буква
   - Хотя бы одна цифра
   - Хотя бы один специальный символ
-- [ ] Добавить Pydantic валидатор для `password` в `UserRegister` schema
-- [ ] Обновить тесты регистрации (валидные/невалидные пароли)
+- [x] Добавить Pydantic валидатор для `password` в `RegisterRequest` schema
+- [x] Обновить тесты регистрации (валидные/невалидные пароли)
 
 ### 2.4. Token Management
 
-- [ ] Добавить refresh tokens (с TTL 7 дней, хранить в in-memory store)
-- [ ] Реализовать endpoint `POST /auth/refresh`
-- [ ] Реализовать endpoint `POST /auth/logout` (добавление access token в blacklist)
-- [ ] Добавить проверку blacklist в `decode_access_token()`
-- [ ] Установить `jwt_expiration_minutes: int = 15` (сократить с 30 до 15 минут)
+- [x] Добавить refresh tokens (с TTL 7 дней, хранить в in-memory store)
+- [x] Реализовать endpoint `POST /auth/refresh`
+- [x] Реализовать endpoint `POST /auth/logout` (добавление access token в blacklist)
+- [x] Добавить проверку blacklist в `decode_access_token()`
+- [x] Установить `jwt_expiration_minutes: int = 15` (сократить с 30 до 15 минут)
 
 ### 2.5. Startup Secret Validation
 
-- [ ] Добавить валидацию `settings.jwt_secret` при старте приложения:
+- [x] Добавить валидацию `settings.jwt_secret` при старте приложения:
   - Минимальная длина 32 символа
   - Запретить дефолтное значение `"change-me-in-production"` в production режиме
   - Запретить дефолтные S3 credentials (`minioadmin`) в production режиме
-- [ ] Добавить `ENVIRONMENT` переменную (`development` / `production`)
-- [ ] При `ENVIRONMENT=production` и слабом секрете — падать с `RuntimeError` и понятным сообщением
+- [x] Добавить `ENVIRONMENT` переменную (`development` / `production`)
+- [x] При `ENVIRONMENT=production` и слабом секрете — падать с `RuntimeError` и понятным сообщением
 
 ---
 
