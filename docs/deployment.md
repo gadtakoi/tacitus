@@ -103,10 +103,22 @@ Let's Encrypt имеет лимиты на количество запросов
 
 ```bash
 # 1. Тестовый сертификат (staging)
-ansible-playbook ... -e ssl_certbot_staging=true
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  -e tacitus_enable_https=true \
+  -e tacitus_domain=example.com \
+  -e ssl_certbot_staging=true
 
 # 2. Если всё ок — получаем реальный сертификат
-ansible-playbook ... -e ssl_certbot_staging=false
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  -e tacitus_enable_https=true \
+  -e tacitus_domain=example.com \
+  -e ssl_certbot_staging=false
 ```
 
 ### Передача секретов
@@ -123,11 +135,34 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   -e tacitus_s3_secret_key="$(openssl rand -hex 32)"
 ```
 
-> ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` или используйте Ansible Vault:
+> ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` прямо в командной строке (для разовых деплоев) или через переменные окружения управляющей машины:
+>
 > ```bash
-> ansible-vault create ansible/group_vars/production.yml
-> ansible-playbook ... --ask-vault-pass
+> ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+>   -e target_host=1.2.3.4 \
+>   -e deploy_user=root \
+>   -e deploy_password=your_password \
+>   -e tacitus_jwt_secret="$(openssl rand -hex 32)" \
+>   -e tacitus_s3_access_key="your-s3-key" \
+>   -e tacitus_s3_secret_key="your-s3-secret"
 > ```
+
+### Полный пример production-деплоя
+
+Всё вместе — IP, логин, SSH-пароль, домен, HTTPS и staging-сертификат:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  -e tacitus_enable_https=true \
+  -e tacitus_domain=example.com \
+  -e tacitus_email=admin@example.com \
+  -e ssl_certbot_staging=true
+```
+
+После успешного staging-прогона перезапустите с `ssl_certbot_staging=false`, чтобы получить валидный сертификат.
 
 ### Переменные плейбука
 
@@ -158,7 +193,11 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 Пример — обновить только код без переустановки Docker:
 
 ```bash
-ansible-playbook ... --tags app
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  -e deploy_password=your_password \
+  --tags app
 ```
 
 ### Обновление приложения
@@ -185,7 +224,13 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 **«Authentication or permission failure»**
 
-- Проверьте пароль: `ansible ... -m ping -e deploy_password=...`
+- Проверьте пароль:
+  ```bash
+  ansible -i ansible/inventory/hosts.yml tacitus -m ping \
+    -e target_host=1.2.3.4 \
+    -e deploy_user=root \
+    -e deploy_password=your_password
+  ```
 - Убедитесь, что пользователь есть в `sudoers` без пароля: `your_user ALL=(ALL) NOPASSWD:ALL`
 - Или добавьте `--ask-become-pass`
 
@@ -218,7 +263,6 @@ TACITUS_S3_ACCESS_KEY=<minio-access-key>
 TACITUS_S3_SECRET_KEY=<minio-secret-key>
 ```
 
-- Секреты хранить только в утверждённом secret manager (например, HashiCorp Vault, AWS Secrets Manager, или переменные
-  окружения хоста)
+- Секреты хранить только в утверждённом secret manager (например переменные окружения хоста)
 - Никогда не коммитить `.env` (уже в `.gitignore`)
 - Не логировать секреты

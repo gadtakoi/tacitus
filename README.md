@@ -80,7 +80,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 | `TACITUS_S3_SECRET_KEY`          | `minioadmin`              | MinIO secret key  |
 | `TACITUS_S3_BUCKET`              | `tacitus-files`           | Bucket для файлов |
 
-> ⚠️ **В production** все dev defaults должны быть переопределены через env vars / Vault.
+> ⚠️ **В production** все dev defaults должны быть переопределены через env vars.
 
 ## Лицензия
 

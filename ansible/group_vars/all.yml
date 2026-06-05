@@ -14,7 +14,7 @@ tacitus_domain: ""
 tacitus_enable_https: false
 tacitus_email: "admin@example.com"
 
-# Secrets (override via -e or vault for production)
+# Secrets (override via -e for production)
 tacitus_jwt_secret: "change-me-in-production"
 tacitus_s3_access_key: "minioadmin"
 tacitus_s3_secret_key: "minioadmin"

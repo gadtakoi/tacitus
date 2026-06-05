@@ -11,7 +11,6 @@
 - Python;
 - FastAPI, Django, Flask;
 - PostgreSQL, Redis, Celery;
-- Vault;
 - Docker Compose, Kubernetes, Nginx, Apache;
 - DevOps- и banking-сценариями.
 
@@ -55,7 +54,6 @@
 Дальше подключайте технологические модули:
 - `fastapi.md`, `django.md`, `flask.md`
 - `postgres.md`, `redis.md`, `celery.md`
-- `vault.md`
 
 ### Если вы DevOps / SRE / platform engineer
 
@@ -73,7 +71,6 @@
 - `kubernetes.md`
 - `nginx-apache.md`
 - `boto-yandex-cloud.md`
-- `vault.md`
 
 ### Если задача смешанная
 
@@ -119,7 +116,6 @@
     nginx-apache.md
     postgres.md
     redis.md
-    vault.md
 ```
 
 ### `system/`
@@ -165,7 +161,6 @@ Infra:
 - `kubernetes.md`
 - `nginx-apache.md`
 - `boto-yandex-cloud.md`
-- `vault.md`
 
 Domain:
 - `banking.md`
@@ -193,7 +188,6 @@ Domain:
 - есть SQL, миграции, схема или индексы: подключайте `modules/postgres.md`;
 - есть Kubernetes manifests: подключайте `modules/kubernetes.md`;
 - есть Nginx/Apache config: подключайте `modules/nginx-apache.md`;
-- есть секреты, Vault или cloud credentials flow: подключайте `modules/vault.md`;
 - есть платежи, антифрод, подтверждения, audit trail: подключайте `modules/banking.md`.
 
 Если задача не использует конкретный стек, модуль лучше не добавлять в контекст.
