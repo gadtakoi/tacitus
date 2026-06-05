@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     jwt_expiration_minutes: int = 15
     jwt_refresh_expiration_days: int = 7
 
+    cors_origins: str = "http://localhost:3000"
+
 
 settings = Settings()
 
@@ -45,4 +47,8 @@ def validate_startup_settings() -> None:
             raise RuntimeError(msg)
         if settings.s3_access_key == "minioadmin" or settings.s3_secret_key == "minioadmin":
             msg = "Default MinIO credentials are not allowed in production"
+            raise RuntimeError(msg)
+        origins = [o.strip() for o in settings.cors_origins.split(",")]
+        if "*" in origins:
+            msg = "Wildcard CORS origin (*) is not allowed in production"
             raise RuntimeError(msg)

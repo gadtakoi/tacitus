@@ -116,24 +116,24 @@
 
 ### 4.1. CORS Hardening
 
-- [ ] Заменить `allow_origins=["*"]` на configurable список:
+- [x] Заменить `allow_origins=["*"]` на configurable список:
   ```python
   allow_origins=["http://localhost:3000", "https://{{ nginx_domain }}"]
   ```
-- [ ] При `ENVIRONMENT=production` запретить `*` в origins
-- [ ] Вынести `CORS_ORIGINS` в `Settings`
+- [x] При `ENVIRONMENT=production` запретить `*` в origins
+- [x] Вынести `CORS_ORIGINS` в `Settings`
 
 ### 4.2. Request Limits
 
-- [ ] Установить `max_request_size` для FastAPI (через middleware или nginx `client_max_body_size`)
-- [ ] Добавить `client_max_body_size 11M;` в nginx (чуть больше лимита приложения)
-- [ ] Добавить `client_body_timeout 30s;` и `client_header_timeout 10s;` в nginx
+- [x] Установить `max_request_size` для FastAPI (через middleware или nginx `client_max_body_size`)
+- [x] Добавить `client_max_body_size 11M;` в nginx (чуть больше лимита приложения)
+- [x] Добавить `client_body_timeout 30s;` и `client_header_timeout 10s;` в nginx
 
 ### 4.3. Error Handling
 
-- [ ] Убедиться, что production не возвращает stack trace клиенту
-- [ ] Убедиться, что `detail` ошибок не раскрывает внутренней структуры (SQL, пути)
-- [ ] Добавить generic `500` ответ с safe message для production
+- [x] Убедиться, что production не возвращает stack trace клиенту
+- [x] Убедиться, что `detail` ошибок не раскрывает внутренней структуры (SQL, пути)
+- [x] Добавить generic `500` ответ с safe message для production
 
 ---
 

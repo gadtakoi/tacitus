@@ -3,6 +3,8 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
+
 
 class AppError(Exception):
     """Base application exception."""
@@ -35,13 +37,24 @@ async def app_exception_handler(request: Request, exc: AppError) -> JSONResponse
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions without leaking internal details.
 
+    In production returns a generic safe message.
+    In debug mode includes the exception message.
+
     Args:
         request: FastAPI request object.
         exc: Generic exception.
 
     Returns:
-        JSON response with generic error message.
+        JSON response with error message.
     """
+    if settings.debug:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(exc),
+                "request_id": getattr(request.state, "request_id", "unknown"),
+            },
+        )
     return JSONResponse(
         status_code=500,
         content={

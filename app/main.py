@@ -12,7 +12,7 @@ from app.api.routers.hello import router as hello_router
 from app.core.config import settings, validate_startup_settings
 from app.core.exceptions import AppError, app_exception_handler, generic_exception_handler
 from app.core.logging_config import setup_logging
-from app.core.middleware import RequestIdMiddleware
+from app.core.middleware import MaxRequestSizeMiddleware, RequestIdMiddleware
 from app.core.rate_limit import limiter
 
 setup_logging()
@@ -22,9 +22,10 @@ app = FastAPI(title=settings.app_name)
 app.state.limiter = limiter
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(MaxRequestSizeMiddleware, max_size=11 * 1024 * 1024)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

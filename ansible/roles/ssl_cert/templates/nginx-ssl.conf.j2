@@ -47,6 +47,10 @@ http {
         listen 443 ssl;
         server_name {{ tacitus_domain }};
 
+        client_max_body_size 11M;
+        client_body_timeout 30s;
+        client_header_timeout 10s;
+
         ssl_certificate /etc/letsencrypt/live/{{ tacitus_domain }}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/{{ tacitus_domain }}/privkey.pem;
         ssl_protocols TLSv1.2 TLSv1.3;
