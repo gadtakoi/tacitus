@@ -234,25 +234,25 @@
 
 ### 9.1. Security-focused Unit Tests
 
-- [ ] `test_password_policy_validation` — слабые/сильные пароли
-- [ ] `test_filename_path_traversal` — `../../../etc/passwd`
-- [ ] `test_file_type_rejection` — загрузка `.exe` под видом `.txt`
-- [ ] `test_rate_limit_blocks_after_threshold` — 429 response
-- [ ] `test_brute_force_lockout` — блокировка после 5 попыток
-- [ ] `test_token_blacklist` — revoked token возвращает 401
-- [ ] `test_cors_rejects_unknown_origin` — preflight failed
+- [x] `test_password_policy_validation` — слабые/сильные пароли
+- [x] `test_filename_path_traversal` — `../../../etc/passwd`
+- [x] `test_file_type_rejection` — загрузка `.exe` под видом `.txt`
+- [x] `test_rate_limit_blocks_after_threshold` — 429 response
+- [x] `test_brute_force_lockout` — блокировка после 5 попыток
+- [x] `test_token_blacklist` — revoked token возвращает 401
+- [x] `test_cors_rejects_unknown_origin` — preflight failed
 
 ### 9.2. Security Headers Verification
 
-- [ ] Добавить тест, проверяющий наличие security headers в ответе nginx
-- [ ] Проверить HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- [x] Добавить тест, проверяющий наличие security headers в ответе nginx
+- [x] Проверить HSTS, CSP, X-Frame-Options, X-Content-Type-Options
 
 ### 9.3. Penetration Testing Checklist
 
-- [ ] Проверить отсутствие stack trace в production-режиме
-- [ ] Проверить, что `.env` недоступен через nginx (`location /.env { deny all; }`)
-- [ ] Проверить, что MinIO console недоступна извне
-- [ ] Проверить заголовки через `securityheaders.com` или `curl -I`
+- [x] Проверить отсутствие stack trace в production-режиме
+- [x] Проверить, что `.env` недоступен через nginx (`location /.env { deny all; }`)
+- [x] Проверить, что MinIO console недоступна извне (порт 9001 не экспонируется в docker-compose)
+- [x] Проверить заголовки через `curl -I` (ручная проверка, см. docs/security.md)
 
 ---
 
