@@ -24,8 +24,8 @@
 
 ### 1.2. HTTPS Enforcement
 
-- [ ] Добавить `upgrade-insecure-requests` в CSP для production
-- [ ] Убедиться, что все cookies (если появятся) имеют флаги `Secure`, `HttpOnly`, `SameSite=Strict`
+- [x] Добавить `upgrade-insecure-requests` в CSP для production
+- [x] Убедиться, что все cookies (если появятся) имеют флаги `Secure`, `HttpOnly`, `SameSite=Strict`
 
 ---
 
