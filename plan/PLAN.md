@@ -179,19 +179,19 @@
 
 ### 7.1. Non-root Containers
 
-- [ ] Добавить `USER` в `Dockerfile` (app) — создать unprivileged user `tacitus`
-- [ ] Добавить `USER` в `nginx/Dockerfile` — использовать `nginx` user
-- [ ] Убедиться, что приложение запускается от непривилегированного пользователя
+- [x] Добавить `USER` в `Dockerfile` (app) — создать unprivileged user `tacitus`
+- [x] Добавить `USER` в `nginx/Dockerfile` — использовать `nginx` user
+- [x] Убедиться, что приложение запускается от непривилегированного пользователя
 
 ### 7.2. Read-only Root Filesystem
 
-- [ ] Добавить `read_only: true` в `docker-compose.yml` для сервиса `app`
-- [ ] Добавить tmpfs volume для `/tmp` если нужно
-- [ ] Добавить `read_only: true` для `nginx` (с volume для `/var/cache/nginx`, `/var/log/nginx`)
+- [x] Добавить `read_only: true` в `docker-compose.yml` для сервиса `app`
+- [x] Добавить tmpfs volume для `/tmp` если нужно
+- [x] Добавить `read_only: true` для `nginx` (с volume для `/var/cache/nginx`, `/var/log/nginx`)
 
 ### 7.3. Capability Dropping
 
-- [ ] Добавить в `docker-compose.yml`:
+- [x] Добавить в `docker-compose.yml`:
   ```yaml
   cap_drop:
     - ALL
@@ -201,7 +201,7 @@
 
 ### 7.4. Resource Limits
 
-- [ ] Добавить `deploy.resources` в `docker-compose.yml`:
+- [x] Добавить `deploy.resources` в `docker-compose.yml`:
   ```yaml
   deploy:
     resources:

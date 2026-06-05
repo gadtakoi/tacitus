@@ -19,8 +19,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR ${APP_HOME}
 
 # Create non-privileged user
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --shell /bin/false appuser
+RUN groupadd --gid 1000 tacitus && \
+    useradd --uid 1000 --gid tacitus --shell /bin/false tacitus
 
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
@@ -29,9 +29,9 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 # Copy application code
 COPY app/ ./app/
 
-RUN chown -R appuser:appuser ${APP_HOME}
+RUN chown -R tacitus:tacitus ${APP_HOME}
 
-USER appuser
+USER tacitus
 
 EXPOSE 8000
 

@@ -6,6 +6,7 @@ services:
     image: tacitus-app:0.1.0
     container_name: tacitus-app
     restart: unless-stopped
+    read_only: true
     env_file:
       - .env
     environment:
@@ -22,6 +23,18 @@ services:
         condition: service_completed_successfully
     networks:
       - tacitus-network
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -77,20 +90,39 @@ services:
     image: tacitus-nginx:0.1.0
     container_name: tacitus-nginx
     restart: unless-stopped
+    read_only: true
     ports:
       - "${NGINX_HOST_PORT:-80}:80"
       - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
       - letsencrypt:/etc/letsencrypt:ro
+      - nginx-cache:/var/cache/nginx
+      - nginx-logs:/var/log/nginx
+      - nginx-run:/run
     depends_on:
       app:
         condition: service_healthy
     networks:
       - tacitus-network
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
 volumes:
   minio-data:
   letsencrypt:
+  nginx-cache:
+  nginx-logs:
+  nginx-run:
 
 networks:
   tacitus-network:
