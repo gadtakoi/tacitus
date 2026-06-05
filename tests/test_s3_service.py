@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.s3_service import S3Service
+from app.services.s3_service import S3Service, sanitize_filename
 
 
 @pytest.fixture
@@ -87,3 +87,40 @@ def test_get_bucket_stats_empty(mock_client: MagicMock, s3_service: S3Service) -
     assert stats["total_size_human"] == "0 B"
     assert stats["average_size_bytes"] == 0.0
     assert stats["largest_file"] is None
+
+
+def test_sanitize_filename_valid() -> None:
+    assert sanitize_filename("file.txt") == "file.txt"
+    assert sanitize_filename("my-file_v2.jpg") == "my-file_v2.jpg"
+
+
+def test_sanitize_filename_path_traversal() -> None:
+    with pytest.raises(ValueError, match="Path traversal"):
+        sanitize_filename("../../../etc/passwd")
+
+
+def test_sanitize_filename_backslash_traversal() -> None:
+    with pytest.raises(ValueError, match="Path traversal"):
+        sanitize_filename("..\\windows\\system32\\config.sys")
+
+
+def test_sanitize_filename_null_byte() -> None:
+    with pytest.raises(ValueError, match="null bytes"):
+        sanitize_filename("file\x00.txt")
+
+
+def test_sanitize_filename_too_long() -> None:
+    with pytest.raises(ValueError, match="too long"):
+        sanitize_filename("a" * 256)
+
+
+def test_sanitize_filename_hidden() -> None:
+    with pytest.raises(ValueError, match="Hidden files"):
+        sanitize_filename(".htaccess")
+
+
+def test_sanitize_filename_invalid_chars() -> None:
+    with pytest.raises(ValueError, match="invalid characters"):
+        sanitize_filename("file name.txt")
+    with pytest.raises(ValueError, match="invalid characters"):
+        sanitize_filename("file:name.txt")

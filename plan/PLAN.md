@@ -82,17 +82,17 @@
 
 ### 3.1. Filename Sanitization
 
-- [ ] Добавить функцию `sanitize_filename()` в `app/services/s3_service.py`:
+- [x] Добавить функцию `sanitize_filename()` в `app/services/s3_service.py`:
   - Удалить path traversal (`../`, `..\\`, нулевые байты)
   - Разрешить только `a-zA-Z0-9._-`
   - Ограничить длину до 255 символов
   - Запретить имена, начинающиеся с точки (hidden files)
-- [ ] Применять sanitization во всех методах, принимающих filename
-- [ ] Вернуть `400 Bad Request` при некорректном имени файла
+- [x] Применять sanitization во всех методах, принимающих filename
+- [x] Вернуть `400 Bad Request` при некорректном имени файла
 
 ### 3.2. File Type Validation
 
-- [ ] Добавить whitelist разрешённых MIME-типов:
+- [x] Добавить whitelist разрешённых MIME-типов:
   ```python
   ALLOWED_TYPES = {
       "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -100,15 +100,15 @@
       "application/json", "application/zip",
   }
   ```
-- [ ] Проверять `file.content_type` при загрузке
+- [x] Проверять `file.content_type` при загрузке
 - [ ] Опционально: проверять magic bytes через `python-magic`
-- [ ] Вернуть `415 Unsupported Media Type` при запрещённом типе
+- [x] Вернуть `415 Unsupported Media Type` при запрещённом типе
 
 ### 3.3. File Extension Validation
 
-- [ ] Проверять расширение файла на соответствие MIME-типу
-- [ ] Запретить исполняемые расширения: `.exe`, `.bat`, `.sh`, `.py`, `.js`, `.php`
-- [ ] Добавить тесты на загрузку опасных файлов
+- [x] Проверять расширение файла на соответствие MIME-типу
+- [x] Запретить исполняемые расширения: `.exe`, `.bat`, `.sh`, `.py`, `.js`, `.php`
+- [x] Добавить тесты на загрузку опасных файлов
 
 ---
 

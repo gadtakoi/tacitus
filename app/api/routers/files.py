@@ -1,6 +1,7 @@
 """File management router."""
 
 import logging
+import posixpath
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
@@ -13,10 +14,33 @@ from app.schemas.files import (
     FileUrlResponse,
 )
 from app.schemas.stats import FileStat, S3StatsResponse
-from app.services.s3_service import s3_service
+from app.services.s3_service import (
+    ALLOWED_TYPES,
+    FORBIDDEN_EXTENSIONS,
+    s3_service,
+    sanitize_filename,
+)
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
+
+
+def _validate_filename(filename: str) -> str:
+    """Sanitize filename and return clean version.
+
+    Args:
+        filename: Raw filename.
+
+    Returns:
+        Sanitized filename.
+
+    Raises:
+        HTTPException: 400 if filename is invalid.
+    """
+    try:
+        return sanitize_filename(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/", response_model=FileListResponse)
@@ -62,18 +86,36 @@ async def upload_file(
     max_size = 10 * 1024 * 1024  # 10 MB
     if len(content) > max_size:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type: {file.content_type}",
+        )
+
     filename = file.filename or "unnamed"
+    sanitized = _validate_filename(filename)
+
+    _, ext = posixpath.splitext(sanitized.lower())
+    if ext in FORBIDDEN_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Forbidden file extension")
+    if ext not in ALLOWED_TYPES.get(file.content_type, set()):
+        raise HTTPException(
+            status_code=415,
+            detail="File extension does not match content type",
+        )
+
     logger.info(
         "Uploading file",
         extra={
             "request_id": request_id,
-            "file_name": filename,
+            "file_name": sanitized,
             "size": len(content),
             "user": current_user,
         },
     )
-    s3_service.upload_file(filename, content)
-    return FileUploadResponse(filename=filename)
+    s3_service.upload_file(sanitized, content)
+    return FileUploadResponse(filename=sanitized)
 
 
 @router.get("/stats", response_model=S3StatsResponse)
@@ -120,12 +162,13 @@ async def get_file_url(
         FileUrlResponse with presigned URL.
     """
     request_id = getattr(request.state, "request_id", "unknown")
+    sanitized = _validate_filename(filename)
     logger.info(
         "Generating presigned URL",
-        extra={"request_id": request_id, "file_name": filename, "user": current_user},
+        extra={"request_id": request_id, "file_name": sanitized, "user": current_user},
     )
-    url = s3_service.get_presigned_url(filename)
-    return FileUrlResponse(filename=filename, url=url)
+    url = s3_service.get_presigned_url(sanitized)
+    return FileUrlResponse(filename=sanitized, url=url)
 
 
 @router.delete("/{filename}", response_model=FileDeleteResponse)
@@ -145,9 +188,10 @@ async def delete_file(
         FileDeleteResponse with deleted filename.
     """
     request_id = getattr(request.state, "request_id", "unknown")
+    sanitized = _validate_filename(filename)
     logger.info(
         "Deleting file",
-        extra={"request_id": request_id, "file_name": filename, "user": current_user},
+        extra={"request_id": request_id, "file_name": sanitized, "user": current_user},
     )
-    s3_service.delete_file(filename)
-    return FileDeleteResponse(filename=filename)
+    s3_service.delete_file(sanitized)
+    return FileDeleteResponse(filename=sanitized)

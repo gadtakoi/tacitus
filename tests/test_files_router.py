@@ -108,3 +108,56 @@ def test_upload_file_too_large() -> None:
     )
     assert response.status_code == 413
     assert "too large" in response.json()["detail"].lower()
+
+
+def test_upload_forbidden_extension() -> None:
+    """Test uploading .exe file returns 400."""
+    token = _get_token()
+    response = client.post(
+        "/files/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("malicious.exe", b"content", "application/octet-stream")},
+    )
+    assert response.status_code == 415
+
+
+def test_upload_unsupported_media_type() -> None:
+    """Test uploading unsupported MIME type returns 415."""
+    token = _get_token()
+    response = client.post(
+        "/files/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("file.bin", b"content", "application/octet-stream")},
+    )
+    assert response.status_code == 415
+
+
+def test_upload_mime_extension_mismatch() -> None:
+    """Test uploading file with mismatched extension and MIME returns 415."""
+    token = _get_token()
+    response = client.post(
+        "/files/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("file.jpg", b"content", "text/plain")},
+    )
+    assert response.status_code == 415
+
+
+def test_get_file_url_invalid_chars() -> None:
+    """Test invalid characters in filename returns 400."""
+    token = _get_token()
+    response = client.get(
+        "/files/file%20name.txt",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+
+
+def test_delete_file_hidden() -> None:
+    """Test hidden file delete returns 400."""
+    token = _get_token()
+    response = client.delete(
+        "/files/.htaccess",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400

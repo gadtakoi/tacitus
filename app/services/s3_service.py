@@ -1,6 +1,8 @@
 """S3 storage service."""
 
 import logging
+import posixpath
+import re
 from typing import Any
 
 import boto3
@@ -10,6 +12,56 @@ from botocore.exceptions import ClientError
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_TYPES: dict[str, set[str]] = {
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/png": {".png"},
+    "image/gif": {".gif"},
+    "image/webp": {".webp"},
+    "application/pdf": {".pdf"},
+    "text/plain": {".txt"},
+    "text/markdown": {".md"},
+    "application/json": {".json"},
+    "application/zip": {".zip"},
+}
+
+FORBIDDEN_EXTENSIONS: set[str] = {
+    ".exe",
+    ".bat",
+    ".sh",
+    ".py",
+    ".js",
+    ".php",
+}
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename to prevent path traversal and unsafe names.
+
+    Args:
+        filename: Raw filename.
+
+    Returns:
+        Sanitized filename.
+
+    Raises:
+        ValueError: If filename is invalid or unsafe.
+    """
+    if "\x00" in filename:
+        raise ValueError("Filename contains null bytes")
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+        raise ValueError("Path traversal detected")
+    # Normalize path separators and take basename
+    filename = posixpath.basename(filename.replace("\\", "/"))
+    if ".." in filename or filename.startswith("/"):
+        raise ValueError("Path traversal detected")
+    if len(filename) > 255:
+        raise ValueError("Filename too long")
+    if filename.startswith("."):
+        raise ValueError("Hidden files are not allowed")
+    if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
+        raise ValueError("Filename contains invalid characters")
+    return filename
 
 
 class S3Service:
@@ -61,10 +113,11 @@ class S3Service:
         Returns:
             Uploaded filename.
         """
+        sanitized = sanitize_filename(filename)
         try:
             self._get_client().put_object(
                 Bucket=self.bucket,
-                Key=filename,
+                Key=sanitized,
                 Body=content,
             )
             logger.info(
@@ -86,10 +139,11 @@ class S3Service:
         Returns:
             Presigned URL string.
         """
+        sanitized = sanitize_filename(filename)
         try:
             url = self._get_client().generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.bucket, "Key": filename},
+                Params={"Bucket": self.bucket, "Key": sanitized},
                 ExpiresIn=expiration,
             )
             return url
@@ -106,8 +160,9 @@ class S3Service:
         Args:
             filename: Name of the file.
         """
+        sanitized = sanitize_filename(filename)
         try:
-            self._get_client().delete_object(Bucket=self.bucket, Key=filename)
+            self._get_client().delete_object(Bucket=self.bucket, Key=sanitized)
             logger.info(
                 "File deleted",
                 extra={"file_name": filename, "bucket": self.bucket},
