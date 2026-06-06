@@ -12,8 +12,13 @@ function FileManager() {
     setLoading(true);
     setError("");
     try {
-      const data: FileListResponse = await filesApi.list();
-      setFiles(data.files);
+      const data = await filesApi.list();
+      if (data && Array.isArray(data.files)) {
+        setFiles(data.files);
+      } else {
+        console.error("Invalid files response", data);
+        setFiles([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files");
     } finally {
@@ -23,11 +28,21 @@ function FileManager() {
 
   const loadStats = useCallback(async () => {
     try {
-      const data: StatsResponse = await filesApi.stats();
-      setStats(data);
+      const data = await filesApi.stats();
+      if (
+        data &&
+        typeof data === "object" &&
+        typeof data.total_files === "number" &&
+        typeof data.average_size_bytes === "number"
+      ) {
+        setStats(data as StatsResponse);
+      } else {
+        console.error("Invalid stats response", data);
+        setStats(null);
+      }
     } catch (err) {
-      // Silently ignore stats errors to avoid cluttering UI
       console.error("Failed to load stats", err);
+      setStats(null);
     }
   }, []);
 
@@ -90,14 +105,14 @@ function FileManager() {
         >
           <strong>Bucket Stats</strong>
           <div style={{ marginTop: 6, fontSize: 14 }}>
-            Total files: <strong>{stats.total_files}</strong> &middot; Total size:{" "}
-            <strong>{stats.total_size_human}</strong> &middot; Average:{" "}
-            <strong>{stats.average_size_bytes.toFixed(0)} bytes</strong>
+            Total files: <strong>{stats.total_files ?? 0}</strong> &middot; Total size:{" "}
+            <strong>{stats.total_size_human ?? "0 B"}</strong> &middot; Average:{" "}
+            <strong>{stats.average_size_bytes != null ? `${stats.average_size_bytes.toFixed(0)} bytes` : "N/A"}</strong>
             {stats.largest_file && (
               <span>
                 {" "}
                 &middot; Largest: <strong>{stats.largest_file.filename}</strong> ({" "}
-                {stats.largest_file.size_human || `${stats.largest_file.size_bytes} bytes`})
+                {stats.largest_file.size_human ?? `${stats.largest_file.size_bytes ?? 0} bytes`})
               </span>
             )}
           </div>

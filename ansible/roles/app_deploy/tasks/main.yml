@@ -48,6 +48,15 @@
     mode: "0644"
   notify: Restart Tacitus
 
+- name: Copy frontend source code
+  ansible.builtin.copy:
+    src: "../../frontend/"
+    dest: "{{ tacitus_deploy_dir }}/frontend/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart Tacitus
+
 - name: Render environment file
   ansible.builtin.template:
     src: .env.j2
@@ -57,12 +66,17 @@
     mode: "0600"
   notify: Restart Tacitus
 
+- name: Rebuild nginx image (no cache)
+  ansible.builtin.command:
+    cmd: "docker compose build --no-cache nginx"
+    chdir: "{{ tacitus_deploy_dir }}"
+
 - name: Build and start services
   ansible.builtin.command:
-    cmd: "docker compose up --build -d"
+    cmd: "docker compose up -d"
     chdir: "{{ tacitus_deploy_dir }}"
   register: compose_up
-  changed_when: "'Started' in compose_up.stdout or 'Built' in compose_up.stdout"
+  changed_when: "'Started' in compose_up.stdout or 'Created' in compose_up.stdout"
 
 - name: Post-check | Wait for application to be ready
   ansible.builtin.uri:
