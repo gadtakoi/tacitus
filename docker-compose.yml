@@ -125,6 +125,47 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  mediamtx:
+    image: bluenviron/mediamtx:1.15.1-ffmpeg
+    container_name: tacitus-mediamtx
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - MTX_RTSPADDRESS=:${TACITUS_MTX_RTSP_PORT:-8554}
+      - MTX_RTMPADDRESS=:${TACITUS_MTX_RTMP_PORT:-1935}
+      - MTX_HLSADDRESS=:${TACITUS_MTX_HLS_PORT:-8888}
+      - MTX_WEBRTCADDRESS=:${TACITUS_MTX_WEBRTC_PORT:-8889}
+      - MTX_SRTADDRESS=:${TACITUS_MTX_SRT_PORT:-8890}
+      - MTX_RTSPTRANSPORTS=${TACITUS_MTX_RTSP_TRANSPORTS:-tcp}
+      - MTX_WEBRTCADDITIONALHOSTS=${TACITUS_MTX_WEBRTC_ADDITIONAL_HOSTS:-}
+    ports:
+      - "${TACITUS_MTX_RTSP_PORT:-8554}:${TACITUS_MTX_RTSP_PORT:-8554}"
+      - "${TACITUS_MTX_RTMP_PORT:-1935}:${TACITUS_MTX_RTMP_PORT:-1935}"
+      - "${TACITUS_MTX_HLS_PORT:-8888}:${TACITUS_MTX_HLS_PORT:-8888}"
+      - "${TACITUS_MTX_WEBRTC_PORT:-8889}:${TACITUS_MTX_WEBRTC_PORT:-8889}"
+      - "${TACITUS_MTX_SRT_PORT:-8890}:${TACITUS_MTX_SRT_PORT:-8890}"
+      - "${TACITUS_MTX_ICE_PORT:-8189}:${TACITUS_MTX_ICE_PORT:-8189}/udp"
+    volumes:
+      - mediamtx-recordings:/recordings
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - tacitus-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo > /dev/tcp/localhost/${TACITUS_MTX_RTSP_PORT:-8554}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
 volumes:
   minio-data:
   letsencrypt:
@@ -132,6 +173,7 @@ volumes:
   nginx-logs:
   nginx-run:
   app-logs:
+  mediamtx-recordings:
 
 networks:
   tacitus-network:

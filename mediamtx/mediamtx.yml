@@ -1,0 +1,5 @@
+logLevel: info
+
+paths:
+  cam1:
+    source: publisher
