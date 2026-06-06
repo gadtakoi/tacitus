@@ -1,4 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  Paper,
+  Title,
+  Text,
+  Group,
+  Button,
+  Table,
+  Loader,
+  Alert,
+  ThemeIcon,
+  Divider,
+  FileButton,
+} from "@mantine/core";
+import {
+  IconBucket,
+  IconFile,
+  IconUpload,
+  IconTrash,
+  IconDownload,
+  IconChartBar,
+  IconAlertCircle,
+} from "@tabler/icons-react";
 import { filesApi, type StatsResponse } from "../api/client";
 
 function FileManager() {
@@ -51,8 +73,7 @@ function FileManager() {
     loadStats();
   }, [loadFiles, loadStats]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleUpload = async (file: File | null) => {
     if (!file) return;
     setUploading(true);
     setError("");
@@ -64,7 +85,6 @@ function FileManager() {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
 
@@ -91,66 +111,118 @@ function FileManager() {
 
   return (
     <div style={{ maxWidth: 800, margin: "40px auto" }}>
-      <h2>Files</h2>
-      {error && <div style={{ color: "red", marginBottom: 12 }}>{error}</div>}
-      {stats && (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            border: "1px solid #ddd",
-            borderRadius: 6,
-            background: "#fafafa",
-          }}
-        >
-          <strong>Bucket Stats</strong>
-          <div style={{ marginTop: 6, fontSize: 14 }}>
-            Total files: <strong>{stats.total_files ?? 0}</strong> &middot; Total size:{" "}
-            <strong>{stats.total_size_human ?? "0 B"}</strong> &middot; Average:{" "}
-            <strong>{stats.average_size_bytes != null ? `${stats.average_size_bytes.toFixed(0)} bytes` : "N/A"}</strong>
-            {stats.largest_file && (
-              <span>
-                {" "}
-                &middot; Largest: <strong>{stats.largest_file.filename}</strong> ({" "}
-                {stats.largest_file.size_human ?? `${stats.largest_file.size_bytes ?? 0} bytes`})
-              </span>
-            )}
-          </div>
-        </div>
+      <Title order={2} mb="md">
+        Files
+      </Title>
+
+      {error && (
+        <Alert icon={<IconAlertCircle size={16} />} color="red" mb="md">
+          {error}
+        </Alert>
       )}
-      <div style={{ marginBottom: 16 }}>
-        <label>
-          Upload file:{" "}
-          <input type="file" onChange={handleUpload} disabled={uploading} />
-        </label>
-        {uploading && <span> Uploading...</span>}
-      </div>
+
+      {stats && (
+        <Paper withBorder shadow="sm" p="md" radius="md" mb="md">
+          <Group mb="xs">
+            <ThemeIcon variant="light" color="blue" size="lg">
+              <IconBucket size={20} />
+            </ThemeIcon>
+            <Title order={4}>Bucket Stats</Title>
+          </Group>
+          <Divider mb="sm" />
+          <Group gap="xs" wrap="wrap">
+            <Group gap={4}>
+              <IconFile size={16} opacity={0.7} />
+              <Text size="sm">
+                Total files: <strong>{stats.total_files ?? 0}</strong>
+              </Text>
+            </Group>
+            <Group gap={4}>
+              <IconChartBar size={16} opacity={0.7} />
+              <Text size="sm">
+                Total size: <strong>{stats.total_size_human ?? "0 B"}</strong>
+              </Text>
+            </Group>
+            <Group gap={4}>
+              <IconChartBar size={16} opacity={0.7} />
+              <Text size="sm">
+                Average:{" "}
+                <strong>
+                  {stats.average_size_bytes != null
+                    ? `${stats.average_size_bytes.toFixed(0)} bytes`
+                    : "N/A"}
+                </strong>
+              </Text>
+            </Group>
+            {stats.largest_file && (
+              <Group gap={4}>
+                <IconFile size={16} opacity={0.7} />
+                <Text size="sm">
+                  Largest: <strong>{stats.largest_file.filename}</strong>{" "}
+                  ({stats.largest_file.size_human ??
+                    `${stats.largest_file.size_bytes ?? 0} bytes`})
+                </Text>
+              </Group>
+            )}
+          </Group>
+        </Paper>
+      )}
+
+      <Group mb="md">
+        <FileButton onChange={handleUpload} accept="*/*">
+          {(props) => (
+            <Button
+              leftSection={<IconUpload size={16} />}
+              loading={uploading}
+              {...props}
+            >
+              Upload file
+            </Button>
+          )}
+        </FileButton>
+        {uploading && <Loader size="sm" />}
+      </Group>
+
       {loading ? (
-        <p>Loading...</p>
+        <Loader />
       ) : files.length === 0 ? (
-        <p>No files found.</p>
+        <Text c="dimmed">No files found.</Text>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>Name</th>
-              <th style={{ textAlign: "right", borderBottom: "1px solid #ccc" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Name</Table.Th>
+              <Table.Th style={{ textAlign: "right" }}>Actions</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {files.map((filename) => (
-              <tr key={filename}>
-                <td style={{ padding: "8px 0", borderBottom: "1px solid #eee" }}>{filename}</td>
-                <td style={{ textAlign: "right", borderBottom: "1px solid #eee" }}>
-                  <button onClick={() => handleDownload(filename)} style={{ marginRight: 8 }}>
+              <Table.Tr key={filename}>
+                <Table.Td>{filename}</Table.Td>
+                <Table.Td style={{ textAlign: "right" }}>
+                  <Button
+                    variant="light"
+                    size="xs"
+                    leftSection={<IconDownload size={14} />}
+                    onClick={() => handleDownload(filename)}
+                    mr="xs"
+                  >
                     Download
-                  </button>
-                  <button onClick={() => handleDelete(filename)}>Delete</button>
-                </td>
-              </tr>
+                  </Button>
+                  <Button
+                    variant="light"
+                    color="red"
+                    size="xs"
+                    leftSection={<IconTrash size={14} />}
+                    onClick={() => handleDelete(filename)}
+                  >
+                    Delete
+                  </Button>
+                </Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       )}
     </div>
   );
