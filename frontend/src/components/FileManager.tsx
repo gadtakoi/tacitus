@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { filesApi, type FileListResponse, type StatsResponse } from "../api/client";
+import { filesApi, type StatsResponse } from "../api/client";
 
 function FileManager() {
   const [files, setFiles] = useState<string[]>([]);
