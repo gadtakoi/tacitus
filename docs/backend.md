@@ -53,3 +53,47 @@ pip install -e ".[dev]"
 - `JWT_ALGORITHM` — по умолчанию `HS256`
 - `JWT_EXPIRATION_MINUTES` — по умолчанию `30`
 - `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+
+## Логирование
+
+Логи настраиваются через переменные окружения с префиксом `TACITUS_LOG_`.
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_FORMAT` | `json` | Формат: `json` (structured) или `text` (plain) |
+| `LOG_DESTINATION` | `stdout` | Куда писать: `stdout`, `file`, `both` |
+| `LOG_FILE_PATH` | `/var/log/tacitus/app.log` | Путь к файлу логов |
+| `LOG_MAX_BYTES` | `10485760` | Максимальный размер файла до ротации (10 МБ) |
+| `LOG_BACKUP_COUNT` | `5` | Количество резервных копий |
+
+### Примеры конфигурации
+
+**Development (только stdout, plain text):**
+```bash
+TACITUS_LOG_LEVEL=DEBUG
+TACITUS_LOG_FORMAT=text
+TACITUS_LOG_DESTINATION=stdout
+```
+
+**Production (файл + stdout, JSON):**
+```bash
+TACITUS_LOG_LEVEL=INFO
+TACITUS_LOG_FORMAT=json
+TACITUS_LOG_DESTINATION=both
+TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
+```
+
+**Только файл (для фоновых процессов):**
+```bash
+TACITUS_LOG_DESTINATION=file
+TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
+```
+
+### Security-лог
+
+Security-события (auth, file uploads, suspicious activity) дополнительно пишутся в отдельный файл `/var/log/tacitus/security.log` независимо от `LOG_DESTINATION`.
+
+### Docker
+
+В `docker-compose.yml` для сервиса `app` создан volume `app-logs`, примонтированный в `/var/log/tacitus`. Логи сохраняются между перезапусками контейнера.

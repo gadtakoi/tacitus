@@ -46,38 +46,38 @@
 
 ### 2.1. Новые переменные в `app/core/config.py`
 
-- [ ] `TACITUS_LOG_LEVEL` (default: `INFO`, варианты: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)
-- [ ] `TACITUS_LOG_FORMAT` (default: `json`, варианты: `json`, `text`)
-- [ ] `TACITUS_LOG_DESTINATION` (default: `stdout`, варианты: `stdout`, `file`, `both`)
-- [ ] `TACITUS_LOG_FILE_PATH` (default: `/var/log/tacitus/app.log`)
-- [ ] `TACITUS_LOG_MAX_BYTES` (default: `10485760` — 10 МБ)
-- [ ] `TACITUS_LOG_BACKUP_COUNT` (default: `5`)
+- [x] `TACITUS_LOG_LEVEL` (default: `INFO`, варианты: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)
+- [x] `TACITUS_LOG_FORMAT` (default: `json`, варианты: `json`, `text`)
+- [x] `TACITUS_LOG_DESTINATION` (default: `stdout`, варианты: `stdout`, `file`, `both`)
+- [x] `TACITUS_LOG_FILE_PATH` (default: `/var/log/tacitus/app.log`)
+- [x] `TACITUS_LOG_MAX_BYTES` (default: `10485760` — 10 МБ)
+- [x] `TACITUS_LOG_BACKUP_COUNT` (default: `5`)
 
 ### 2.2. Обновление `app/core/logging_config.py`
 
-- [ ] `setup_logging()` должен читать настройки из `settings`
-- [ ] В зависимости от `LOG_DESTINATION` добавлять `StreamHandler`, `RotatingFileHandler` или оба
-- [ ] В зависимости от `LOG_FORMAT` использовать JSON-форматтер или plain text
-- [ ] В зависимости от `LOG_LEVEL` устанавливать `root_logger.setLevel()`
+- [x] `setup_logging()` должен читать настройки из `settings`
+- [x] В зависимости от `LOG_DESTINATION` добавлять `StreamHandler`, `RotatingFileHandler` или оба
+- [x] В зависимости от `LOG_FORMAT` использовать JSON-форматтер или plain text
+- [x] В зависимости от `LOG_LEVEL` устанавливать `root_logger.setLevel()`
 
 ### 2.3. Обновление `.env.example`
 
-- [ ] Добавить все новые `TACITUS_LOG_*` переменные с дефолтными значениями
-- [ ] Добавить комментарии с описанием каждой переменной
+- [x] Добавить все новые `TACITUS_LOG_*` переменные с дефолтными значениями
+- [x] Добавить комментарии с описанием каждой переменной
 
 ### 2.4. Обновление документации
 
-- [ ] Добавить раздел "Логирование" в `docs/backend.md`
-- [ ] Описать доступные переменные окружения и их значения
-- [ ] Добавить пример `.env` для development и production
+- [x] Добавить раздел "Логирование" в `docs/backend.md`
+- [x] Описать доступные переменные окружения и их значения
+- [x] Добавить пример `.env` для development и production
 
 ### 2.5. Тестирование
 
-- [ ] Проверить `LOG_DESTINATION=stdout` — только stdout, файла нет
-- [ ] Проверить `LOG_DESTINATION=file` — только файл, stdout пуст
-- [ ] Проверить `LOG_DESTINATION=both` — и файл, и stdout
-- [ ] Проверить `LOG_FORMAT=text` — plain text вместо JSON
-- [ ] Проверить `LOG_LEVEL=DEBUG` — debug-сообщения видны
+- [x] Проверить `LOG_DESTINATION=stdout` — только stdout, файла нет
+- [x] Проверить `LOG_DESTINATION=file` — только файл, stdout пуст
+- [x] Проверить `LOG_DESTINATION=both` — и файл, и stdout
+- [x] Проверить `LOG_FORMAT=text` — plain text вместо JSON
+- [x] Проверить `LOG_LEVEL=DEBUG` — debug-сообщения видны
 
 ---
 

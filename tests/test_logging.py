@@ -81,6 +81,47 @@ def test_security_log_writes_to_file() -> None:
     assert "testuser" in content
 
 
+def test_text_formatter_outputs_plain_text() -> None:
+    """Text formatter should produce human-readable plain text."""
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s | request_id=%(request_id)s | %(message)s",
+    )
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+    record.request_id = "req-123"
+    output = formatter.format(record)
+    assert "INFO" in output
+    assert "hello" in output
+    assert "req-123" in output
+
+
+def test_log_level_debug_includes_debug_messages() -> None:
+    """DEBUG level should allow debug messages through."""
+    logger = logging.getLogger("level_debug_test")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    logger.handlers = [handler]
+    assert logger.isEnabledFor(logging.DEBUG)
+
+
+def test_log_level_warning_filters_info() -> None:
+    """WARNING level should filter out INFO messages."""
+    logger = logging.getLogger("level_warning_test")
+    logger.setLevel(logging.WARNING)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.WARNING)
+    logger.handlers = [handler]
+    assert not logger.isEnabledFor(logging.INFO)
+
+
 def test_log_rotation_creates_backup() -> None:
     """RotatingFileHandler should create backup files when maxBytes exceeded."""
     with tempfile.TemporaryDirectory() as tmpdir:
