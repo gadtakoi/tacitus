@@ -16,6 +16,7 @@ from app.core.logging_config import setup_logging
 from app.core.middleware import MaxRequestSizeMiddleware, RequestIdMiddleware
 from app.core.rate_limit import limiter
 from app.core.security_logging import SuspiciousActivityMiddleware, log_security_event
+from app.core.sentry import init_sentry
 
 
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -34,6 +35,7 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONR
 
 setup_logging()
 validate_startup_settings()
+init_sentry()
 
 app = FastAPI(title=settings.app_name)
 app.state.limiter = limiter

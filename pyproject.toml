@@ -13,6 +13,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "passlib>=1.7.4",
     "slowapi>=0.1.9",
+    "sentry-sdk[fastapi]>=2.0.0",
 ]
 
 [project.optional-dependencies]

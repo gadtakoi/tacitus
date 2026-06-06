@@ -85,51 +85,51 @@
 
 ### 3.1. Зависимости
 
-- [ ] Добавить `sentry-sdk[fastapi]` в `pyproject.toml` (опциональная зависимость или dev)
-- [ ] Обновить `requirements.txt` через `pip-compile --generate-hashes`
+- [x] Добавить `sentry-sdk[fastapi]` в `pyproject.toml` (опциональная зависимость или dev)
+- [x] Обновить `requirements.txt` через `pip-compile --generate-hashes`
 
 ### 3.2. Конфигурация
 
-- [ ] Добавить `TACITUS_SENTRY_DSN` в `app/core/config.py` (default: пустая строка)
-- [ ] Добавить `TACITUS_SENTRY_ENVIRONMENT` (default: `development`)
-- [ ] Добавить `TACITUS_SENTRY_TRACES_SAMPLE_RATE` (default: `0.1`, float 0.0–1.0)
+- [x] Добавить `TACITUS_SENTRY_DSN` в `app/core/config.py` (default: пустая строка)
+- [x] Добавить `TACITUS_SENTRY_ENVIRONMENT` (default: `development`)
+- [x] Добавить `TACITUS_SENTRY_TRACES_SAMPLE_RATE` (default: `0.1`, float 0.0–1.0)
 
 ### 3.3. Инициализация Sentry
 
-- [ ] Создать `app/core/sentry.py` с функцией `init_sentry()`
-- [ ] Инициализировать `sentry_sdk.init()` только если `TACITUS_SENTRY_DSN` не пустой
-- [ ] Интеграция с FastAPI: `FastApiIntegration()`
-- [ ] Передача `environment`, `traces_sample_rate`, `release` (версия из `pyproject.toml`)
+- [x] Создать `app/core/sentry.py` с функцией `init_sentry()`
+- [x] Инициализировать `sentry_sdk.init()` только если `TACITUS_SENTRY_DSN` не пустой
+- [x] Интеграция с FastAPI: `FastApiIntegration()`
+- [x] Передача `environment`, `traces_sample_rate`, `release` (версия из `pyproject.toml`)
 
 ### 3.4. Интеграция в `app/main.py`
 
-- [ ] Вызвать `init_sentry()` сразу после `setup_logging()` (только если DSN задан)
-- [ ] Убедиться, что Sentry ловит необработанные исключения в middleware и routers
+- [x] Вызвать `init_sentry()` сразу после `setup_logging()` (только если DSN задан)
+- [x] Убедиться, что Sentry ловит необработанные исключения в middleware и routers
 
 ### 3.5. Дополнительные настройки
 
-- [ ] Добавить `before_send` hook для фильтрации PII (passwords, tokens) перед отправкой в Sentry
-- [ ] Добавить тег `request_id` к Sentry scope для связи с логами
-- [ ] Добавить пользовательский контекст (`username`) при аутентификации
+- [x] Добавить `before_send` hook для фильтрации PII (passwords, tokens) перед отправкой в Sentry
+- [x] Добавить тег `request_id` к Sentry scope для связи с логами
+- [x] Добавить пользовательский контекст (`username`) при аутентификации
 
 ### 3.6. Обновление `.env.example`
 
-- [ ] Добавить `TACITUS_SENTRY_DSN=` (пустое по умолчанию — Sentry отключён)
-- [ ] Добавить `TACITUS_SENTRY_ENVIRONMENT=development`
-- [ ] Добавить `TACITUS_SENTRY_TRACES_SAMPLE_RATE=0.1`
+- [x] Добавить `TACITUS_SENTRY_DSN=` (пустое по умолчанию — Sentry отключён)
+- [x] Добавить `TACITUS_SENTRY_ENVIRONMENT=development`
+- [x] Добавить `TACITUS_SENTRY_TRACES_SAMPLE_RATE=0.1`
 
 ### 3.7. Документация
 
-- [ ] Добавить раздел "Sentry" в `docs/backend.md`
-- [ ] Описать, как включить Sentry (заполнить `SENTRY_DSN`)
-- [ ] Описать, какие данные отправляются и как фильтруются PII
+- [x] Добавить раздел "Sentry" в `docs/backend.md`
+- [x] Описать, как включить Sentry (заполнить `SENTRY_DSN`)
+- [x] Описать, какие данные отправляются и как фильтруются PII
 
 ### 3.8. Тестирование
 
-- [ ] Проверить, что при пустом `SENTRY_DSN` приложение стартует без ошибок, Sentry не инициализируется
-- [ ] Проверить, что при заполненном `SENTRY_DSN` ошибки отправляются в Sentry
-- [ ] Проверить, что PII (пароли, токены) не попадают в Sentry events
-- [ ] Проверить, что `request_id` присутствует в Sentry tags
+- [x] Проверить, что при пустом `SENTRY_DSN` приложение стартует без ошибок, Sentry не инициализируется
+- [x] Проверить, что при заполненном `SENTRY_DSN` ошибки отправляются в Sentry
+- [x] Проверить, что PII (пароли, токены) не попадают в Sentry events
+- [x] Проверить, что `request_id` присутствует в Sentry tags
 
 ---
 

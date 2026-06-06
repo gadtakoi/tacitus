@@ -58,18 +58,19 @@ pip install -e ".[dev]"
 
 Логи настраиваются через переменные окружения с префиксом `TACITUS_LOG_`.
 
-| Переменная | По умолчанию | Описание |
-|---|---|---|
-| `LOG_LEVEL` | `INFO` | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `LOG_FORMAT` | `json` | Формат: `json` (structured) или `text` (plain) |
-| `LOG_DESTINATION` | `stdout` | Куда писать: `stdout`, `file`, `both` |
-| `LOG_FILE_PATH` | `/var/log/tacitus/app.log` | Путь к файлу логов |
-| `LOG_MAX_BYTES` | `10485760` | Максимальный размер файла до ротации (10 МБ) |
-| `LOG_BACKUP_COUNT` | `5` | Количество резервных копий |
+| Переменная         | По умолчанию               | Описание                                                             |
+|--------------------|----------------------------|----------------------------------------------------------------------|
+| `LOG_LEVEL`        | `INFO`                     | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_FORMAT`       | `json`                     | Формат: `json` (structured) или `text` (plain)                       |
+| `LOG_DESTINATION`  | `stdout`                   | Куда писать: `stdout`, `file`, `both`                                |
+| `LOG_FILE_PATH`    | `/var/log/tacitus/app.log` | Путь к файлу логов                                                   |
+| `LOG_MAX_BYTES`    | `10485760`                 | Максимальный размер файла до ротации (10 МБ)                         |
+| `LOG_BACKUP_COUNT` | `5`                        | Количество резервных копий                                           |
 
 ### Примеры конфигурации
 
 **Development (только stdout, plain text):**
+
 ```bash
 TACITUS_LOG_LEVEL=DEBUG
 TACITUS_LOG_FORMAT=text
@@ -77,6 +78,7 @@ TACITUS_LOG_DESTINATION=stdout
 ```
 
 **Production (файл + stdout, JSON):**
+
 ```bash
 TACITUS_LOG_LEVEL=INFO
 TACITUS_LOG_FORMAT=json
@@ -85,6 +87,7 @@ TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
 ```
 
 **Только файл (для фоновых процессов):**
+
 ```bash
 TACITUS_LOG_DESTINATION=file
 TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
@@ -92,8 +95,30 @@ TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
 
 ### Security-лог
 
-Security-события (auth, file uploads, suspicious activity) дополнительно пишутся в отдельный файл `/var/log/tacitus/security.log` независимо от `LOG_DESTINATION`.
+Security-события (auth, file uploads, suspicious activity) дополнительно пишутся в отдельный файл
+`/var/log/tacitus/security.log` независимо от `LOG_DESTINATION`.
+
+## Sentry
+
+Опциональная интеграция с Sentry для отслеживания ошибок и performance monitoring.
+
+| Переменная                  | По умолчанию  | Описание                                                   |
+|-----------------------------|---------------|------------------------------------------------------------|
+| `SENTRY_DSN`                | `''` (пустая) | DSN проекта Sentry. Если пустая — Sentry отключён          |
+| `SENTRY_ENVIRONMENT`        | `development` | Окружение: `development`, `staging`, `production`          |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1`         | Доля запросов, отправляемых в Sentry Performance (0.0–1.0) |
+
+Включение:
+
+```bash
+TACITUS_SENTRY_DSN=https://xxx@yyy.ingest.sentry.io/zzz
+TACITUS_SENTRY_ENVIRONMENT=production
+TACITUS_SENTRY_TRACES_SAMPLE_RATE=0.1
+```
+
+Фильтрация PII: пароли, токены, JWT-секреты автоматически заменяются на `[FILTERED]` перед отправкой в Sentry.
 
 ### Docker
 
-В `docker-compose.yml` для сервиса `app` создан volume `app-logs`, примонтированный в `/var/log/tacitus`. Логи сохраняются между перезапусками контейнера.
+В `docker-compose.yml` для сервиса `app` создан volume `app-logs`, примонтированный в `/var/log/tacitus`. Логи
+сохраняются между перезапусками контейнера.
