@@ -1,0 +1,100 @@
+"""Tests for logging configuration."""
+
+import json
+import logging
+import os
+import tempfile
+
+from app.core.logging_config import JsonFormatter, RequestIdFilter, setup_logging
+from app.core.security_logging import log_security_event
+
+
+def test_json_formatter_outputs_valid_json() -> None:
+    """JsonFormatter should produce valid JSON with expected fields."""
+    formatter = JsonFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+    record.request_id = "req-123"
+    output = formatter.format(record)
+    parsed = json.loads(output)
+    assert parsed["level"] == "INFO"
+    assert parsed["message"] == "hello"
+    assert parsed["request_id"] == "req-123"
+    assert "timestamp" in parsed
+
+
+def test_request_id_filter_injects_request_id() -> None:
+    """RequestIdFilter should inject request_id into log record."""
+    filt = RequestIdFilter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+    assert not hasattr(record, "request_id")
+    filt.filter(record)
+    assert record.request_id == "unknown"
+
+
+def test_setup_logging_creates_handlers() -> None:
+    """setup_logging should create RotatingFileHandler and StreamHandler."""
+    setup_logging()
+    root_logger = logging.getLogger()
+    assert any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root_logger.handlers)
+    assert any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers)
+
+
+def test_log_writes_to_file() -> None:
+    """Application logs should be written to the configured file."""
+    setup_logging()
+    logger = logging.getLogger("test_app_logger")
+    test_msg = "test_log_writes_to_file_message"
+    logger.info(test_msg)
+
+    log_file_path = os.environ.get("TACITUS_LOG_FILE_PATH", "/tmp/app.log")
+    with open(log_file_path) as f:
+        content = f.read()
+    assert test_msg in content
+
+
+def test_security_log_writes_to_file() -> None:
+    """Security events should be written to security.log."""
+    setup_logging()
+    log_security_event("auth.login", severity="info", ip="127.0.0.1", user="testuser")
+
+    log_file_path = os.environ.get("TACITUS_LOG_FILE_PATH", "/tmp/app.log")
+    security_log_path = os.path.join(os.path.dirname(log_file_path), "security.log")
+    with open(security_log_path) as f:
+        content = f.read()
+    assert "auth.login" in content
+    assert "testuser" in content
+
+
+def test_log_rotation_creates_backup() -> None:
+    """RotatingFileHandler should create backup files when maxBytes exceeded."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_path = os.path.join(tmpdir, "test.log")
+        handler = logging.handlers.RotatingFileHandler(
+            filename=log_path,
+            maxBytes=10,
+            backupCount=2,
+        )
+        logger = logging.getLogger("rotation_test")
+        logger.setLevel(logging.DEBUG)
+        logger.handlers = [handler]
+        for _ in range(20):
+            logger.info("x" * 20)
+        handler.close()
+        backups = [f for f in os.listdir(tmpdir) if f.startswith("test.log")]
+        assert len(backups) >= 2

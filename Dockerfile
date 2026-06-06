@@ -18,9 +18,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR ${APP_HOME}
 
-# Create non-privileged user
+# Create non-privileged user and log directory
 RUN groupadd --gid 1000 tacitus && \
-    useradd --uid 1000 --gid tacitus --shell /bin/false tacitus
+    useradd --uid 1000 --gid tacitus --shell /bin/false tacitus && \
+    mkdir -p /var/log/tacitus && \
+    chown tacitus:tacitus /var/log/tacitus
 
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages

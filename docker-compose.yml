@@ -25,6 +25,8 @@ services:
       - tacitus-network
     tmpfs:
       - /tmp
+    volumes:
+      - app-logs:/var/log/tacitus
     cap_drop:
       - ALL
     deploy:
@@ -127,6 +129,7 @@ volumes:
   nginx-cache:
   nginx-logs:
   nginx-run:
+  app-logs:
 
 networks:
   tacitus-network:

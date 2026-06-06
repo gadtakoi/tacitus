@@ -28,6 +28,14 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # Logging settings
+    log_level: str = "INFO"
+    log_format: str = "json"
+    log_destination: str = "stdout"
+    log_file_path: str = "/var/log/tacitus/app.log"
+    log_max_bytes: int = 10_485_760  # 10 MB
+    log_backup_count: int = 5
+
 
 settings = Settings()
 

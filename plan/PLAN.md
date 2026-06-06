@@ -10,35 +10,35 @@
 
 ### 1.1. RotatingFileHandler
 
-- [ ] Добавить `logging.handlers.RotatingFileHandler` в `app/core/logging_config.py`
-- [ ] Путь к лог-файлу: `/var/log/tacitus/app.log` (production) или `./logs/app.log` (development)
-- [ ] Максимальный размер файла: 10 МБ
-- [ ] Количество резервных копий: 5
-- [ ] Формат: JSON-structured logging (timestamp, level, message, request_id, logger_name)
+- [x] Добавить `logging.handlers.RotatingFileHandler` в `app/core/logging_config.py`
+- [x] Путь к лог-файлу: `/var/log/tacitus/app.log` (production) или `./logs/app.log` (development)
+- [x] Максимальный размер файла: 10 МБ
+- [x] Количество резервных копий: 5
+- [x] Формат: JSON-structured logging (timestamp, level, message, request_id, logger_name)
 
 ### 1.2. StreamHandler для stdout
 
-- [ ] Сохранить существующий `logging.StreamHandler(sys.stdout)`
-- [ ] Убедиться, что stdout handler используется для Docker/контейнерных сред
-- [ ] Убедиться, что оба handler'а (file + stdout) могут работать одновременно
+- [x] Сохранить существующий `logging.StreamHandler(sys.stdout)`
+- [x] Убедиться, что stdout handler используется для Docker/контейнерных сред
+- [x] Убедиться, что оба handler'а (file + stdout) могут работать одновременно
 
 ### 1.3. Отдельный security-лог
 
-- [ ] Добавить `RotatingFileHandler` для `security` logger (`app/core/security_logging.py`)
-- [ ] Путь: `/var/log/tacitus/security.log`
-- [ ] Отделить security события от основного application log
+- [x] Добавить `RotatingFileHandler` для `security` logger (`app/core/security_logging.py`)
+- [x] Путь: `/var/log/tacitus/security.log`
+- [x] Отделить security события от основного application log
 
 ### 1.4. Создание директории для логов
 
-- [ ] Добавить `mkdir -p` (или `os.makedirs`) при старте приложения
-- [ ] Убедиться, что non-root пользователь (`tacitus`) имеет права на запись
-- [ ] Для Docker: создать volume `app-logs` и примонтировать в `/var/log/tacitus`
+- [x] Добавить `mkdir -p` (или `os.makedirs`) при старте приложения
+- [x] Убедиться, что non-root пользователь (`tacitus`) имеет права на запись
+- [x] Для Docker: создать volume `app-logs` и примонтировать в `/var/log/tacitus`
 
 ### 1.5. Тестирование
 
-- [ ] Проверить, что логи пишутся в файл при включённом файловом логировании
-- [ ] Проверить ротацию: создать файл > 10 МБ, убедиться, что создаётся `app.log.1`
-- [ ] Проверить, что security events попадают в `security.log`
+- [x] Проверить, что логи пишутся в файл при включённом файловом логировании
+- [x] Проверить ротацию: создать файл > 10 МБ, убедиться, что создаётся `app.log.1`
+- [x] Проверить, что security events попадают в `security.log`
 
 ---
 
