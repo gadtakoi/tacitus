@@ -1,11 +1,14 @@
+import { Center, Stack, Title } from "@mantine/core";
 import LoginForm from "../components/LoginForm";
 
 function LoginPage() {
   return (
-    <div>
-      <h1 style={{ textAlign: "center" }}>Tacitus</h1>
-      <LoginForm />
-    </div>
+    <Center style={{ minHeight: "100vh" }}>
+      <Stack align="center" gap="lg">
+        <Title order={1}>Tacitus</Title>
+        <LoginForm />
+      </Stack>
+    </Center>
   );
 }
 

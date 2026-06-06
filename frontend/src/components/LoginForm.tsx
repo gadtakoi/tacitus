@@ -1,57 +1,78 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  TextInput,
+  PasswordInput,
+  Button,
+  Paper,
+  Title,
+  Alert,
+  Stack,
+} from "@mantine/core";
+import { useForm, isNotEmpty } from "@mantine/form";
 import { authApi } from "../api/client";
 
 function LoginForm() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm({
+    mode: "controlled",
+    initialValues: {
+      username: "",
+      password: "",
+    },
+    validate: {
+      username: isNotEmpty("Username is required"),
+      password: isNotEmpty("Password is required"),
+    },
+  });
+
+  const handleSubmit = async (values: { username: string; password: string }) => {
     setError("");
+    setLoading(true);
     try {
-      const response = await authApi.login(username, password);
+      const response = await authApi.login(values.username, values.password);
       localStorage.setItem("token", response.access_token);
       navigate("/files");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ maxWidth: 320, margin: "40px auto" }}>
-      <h2>Login</h2>
-      {error && <div style={{ color: "red", marginBottom: 12 }}>{error}</div>}
-      <div style={{ marginBottom: 12 }}>
-        <label>
-          Username
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            style={{ display: "block", width: "100%", padding: 8 }}
+    <Paper withBorder shadow="md" p={30} radius="md" style={{ maxWidth: 360 }}>
+      <Title order={3} ta="center" mb="md">
+        Login
+      </Title>
+
+      {error && (
+        <Alert color="red" mb="md" variant="light">
+          {error}
+        </Alert>
+      )}
+
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        <Stack>
+          <TextInput
+            label="Username"
+            placeholder="Enter your username"
+            {...form.getInputProps("username")}
           />
-        </label>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ display: "block", width: "100%", padding: 8 }}
+          <PasswordInput
+            label="Password"
+            placeholder="Enter your password"
+            {...form.getInputProps("password")}
           />
-        </label>
-      </div>
-      <button type="submit" style={{ padding: "8px 16px" }}>
-        Sign In
-      </button>
-    </form>
+          <Button type="submit" loading={loading} fullWidth>
+            Sign In
+          </Button>
+        </Stack>
+      </form>
+    </Paper>
   );
 }
 
