@@ -15,13 +15,13 @@ class Settings(BaseSettings):
     port: int = 8000
     environment: str = "development"
 
-    # S3 settings — no dev defaults in code, use .env
+    # S3 settings — dev defaults for local development, override in .env for production
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = Field(..., min_length=8)
-    s3_secret_key: str = Field(..., min_length=8)
+    s3_access_key: str = Field(default="minioadmin", min_length=8)
+    s3_secret_key: str = Field(default="minioadmin", min_length=8)
     s3_bucket: str = "tacitus-files"
 
-    jwt_secret: str = Field(...)
+    jwt_secret: str = Field(default="dev-jwt-secret-change-me")
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 15
     jwt_refresh_expiration_days: int = 7

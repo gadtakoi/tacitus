@@ -6,7 +6,8 @@ WORKDIR /build
 RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml ./
-RUN uv pip install --system --no-cache -e "."
+COPY app/ ./app/
+RUN uv pip install --system --no-cache "."
 
 # Runtime stage
 FROM python:3.14-slim AS runtime
@@ -27,9 +28,6 @@ RUN groupadd --gid 1000 tacitus && \
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
-
-# Copy application code
-COPY app/ ./app/
 
 RUN chown -R tacitus:tacitus ${APP_HOME}
 
