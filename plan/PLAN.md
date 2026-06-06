@@ -135,8 +135,8 @@
 
 ## 4. Финальная верификация
 
-- [ ] `ruff check .` проходит без ошибок
-- [ ] `pytest tests/` — все тесты passed
-- [ ] `pip-audit -r requirements.txt` — 0 уязвимостей
-- [ ] Проверка в Docker: логи видны в `docker compose logs`, файлы создаются в volume
-- [ ] Проверка Ansible-деплоя: лог-директория создаётся, права корректны
+- [x] `ruff check .` проходит без ошибок
+- [x] `pytest tests/` — все тесты passed
+- [x] `pip-audit -r requirements.txt` — 0 уязвимостей
+- [x] Проверка в Docker: логи видны в `docker compose logs`, файлы создаются в volume
+- [x] Проверка Ansible-деплоя: лог-директория создаётся, права корректны

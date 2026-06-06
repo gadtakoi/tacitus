@@ -66,6 +66,15 @@
     mode: "0600"
   notify: Restart Tacitus
 
+- name: Ensure log directory exists on host
+  ansible.builtin.file:
+    path: /var/log/tacitus
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+  become: true
+
 - name: Rebuild nginx image (no cache)
   ansible.builtin.command:
     cmd: "docker compose build --no-cache nginx"
