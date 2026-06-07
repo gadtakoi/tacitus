@@ -4,12 +4,19 @@ logLevel: info
 api: yes
 apiAddress: :9997
 
-# RTSP reception is always enabled; other protocols are disabled by default
+# RTSP reception is enabled; all other protocols are disabled
 rtsp: yes
 rtmp: no
 hls: no
 webrtc: no
 srt: no
+
+pathDefaults:
+  record: yes
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 1h
 
 paths:
 {% for path in mediamtx_paths %}

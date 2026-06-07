@@ -10,6 +10,10 @@ mediamtx_rtsp_transports: tcp
 mediamtx_webrtc_additional_hosts: ""
 mediamtx_api_url: "http://mediamtx:9997/v3"
 
+# Archive limits
+mediamtx_max_age_days: 7
+mediamtx_max_size_gb: 50
+
 # Default paths (cameras)
 mediamtx_paths:
   - name: cam1

@@ -51,3 +51,4 @@ htmlcov/
 # Docker
 *.log
 /frontend/node_modules/
+/recordings

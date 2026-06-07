@@ -57,6 +57,15 @@
     mode: "0644"
   notify: Restart Tacitus
 
+- name: Copy scripts
+  ansible.builtin.copy:
+    src: "../../scripts/"
+    dest: "{{ tacitus_deploy_dir }}/scripts/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart Tacitus
+
 - name: Render environment file
   ansible.builtin.template:
     src: .env.j2
