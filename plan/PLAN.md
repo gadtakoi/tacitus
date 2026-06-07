@@ -48,6 +48,7 @@
 | **MediaMTX**      | RTSP/RTSPS сервер, запись, per-path auth             |
 | **React**         | UI списка потоков, форма добавления/редактирования   |
 | **S3/MinIO**      | Хранение зашифрованных архивов записей               |
+| **PostgreSQL**    | Хранение конфигураций потоков, пользователей, метаданных |
 | **Ansible**       | Деплой TLS-сертификатов, ротация credentials         |
 
 ---
@@ -58,13 +59,35 @@
 
 #### 3.1.1. Модель данных и хранение конфигурации
 
-- [ ] Создать Pydantic-схемы:
+- [x] Создать Pydantic-схемы:
   - `StreamConfig` (name, source, record_enabled, publish_creds, read_creds,
     created_at, updated_at)
   - `StreamCreateRequest`, `StreamUpdateRequest`
-- [ ] Расширить in-memory store (или подготовить модель для БД) для хранения
-  конфигураций потоков
-- [ ] Добавить валидацию: уникальность имени потока, допустимые символы в path
+- [ ] Настроить **PostgreSQL** в `docker-compose.yml`:
+  - Сервис `postgres:18-alpine` с volume `postgres-data`
+  - Переменные окружения: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+  - Healthcheck через `pg_isready`
+  - Сервис подключён к сети `tacitus-network`
+- [ ] Добавить **SQLAlchemy** + **asyncpg** в зависимости:
+  - `sqlalchemy[asyncio]>=2.0`, `asyncpg>=0.29`
+  - Обновить `pyproject.toml` и `requirements.txt`
+- [ ] Создать модели SQLAlchemy (`app/db/models.py`):
+  - `Stream` (id, name, source, record_enabled, publish_user, publish_pass,
+    read_user, read_pass, created_at, updated_at)
+  - Уникальный индекс на `name`
+- [ ] Настроить миграции **Alembic**:
+  - `alembic init migrations`
+  - Подключение к БД через `TACITUS_DATABASE_URL`
+  - Автогенерация миграций для модели `Stream`
+- [ ] Создать слой доступа к данным (`app/db/repositories/streams.py`):
+  - `create_stream()`, `get_stream_by_name()`, `list_streams()`,
+    `update_stream()`, `delete_stream()`
+  - Async SQLAlchemy session через `async_sessionmaker`
+- [ ] Рефакторинг `app/services/stream_config_service.py`:
+  - Заменить in-memory dict на вызовы к репозиторию БД
+  - Удалить `_streams: dict` и `_streams_lock`
+- [ ] Добавить валидацию: уникальность имени потока (на уровне БД + схемы),
+  допустимые символы в path
 
 #### 3.1.2. Backend API — CRUD потоков
 
@@ -200,6 +223,9 @@
   - RTSPS-порт: `${TACITUS_MTX_RTSPS_PORT:-8322}:${TACITUS_MTX_RTSPS_PORT:-8322}`
   - Volume для сертификатов: `./certs:/certs:ro` (или shared volume с nginx)
   - Переменная `MTX_ENCRYPTION`
+  - Сервис `postgres:18-alpine` с volume `postgres-data`
+  - Сервис `app` зависит от `postgres` (`depends_on` + `condition: service_healthy`)
+  - Init-контейнер `db-migrations` для `alembic upgrade head`
 - [ ] Обновить healthcheck: проверка и RTSP, и RTSPS портов (опционально)
 - [ ] Обновить `mediamtx-cleanup`: поддержка `TACITUS_ARCHIVE_ENCRYPTION_KEY`
 
@@ -230,6 +256,28 @@
 | `TACITUS_MTX_TLS_KEY_PATH`          | `/certs/server.key` | Путь к TLS-ключу в контейнере       |
 | `TACITUS_MTX_ENABLE_PER_PATH_AUTH`  | `true`          | Включить publish/read credentials     |
 | `TACITUS_ARCHIVE_ENCRYPTION_KEY`    | —               | Ключ Fernet для шифрования архивов    |
+| `TACITUS_DATABASE_URL`              | `postgresql+asyncpg://postgres:postgres@postgres:5432/tacitus` | URL подключения к PostgreSQL |
+
+#### 3.3.4. PostgreSQL
+
+- [ ] Добавить сервис `postgres` в `docker-compose.yml`:
+  - Образ `postgres:18-alpine` (pinned)
+  - Volume `postgres-data:/var/lib/postgresql/data`
+  - Переменные: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+  - Healthcheck: `pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}`
+- [ ] Добавить init-контейнер `db-migrations`:
+  - Образ на базе `tacitus-app`
+  - Команда: `alembic upgrade head`
+  - Зависимость от `postgres` (condition: service_healthy)
+- [ ] Обновить `app/core/config.py`:
+  - `database_url: str` с дефолтом `postgresql+asyncpg://postgres:postgres@postgres:5432/tacitus`
+- [ ] Создать `app/db/engine.py`:
+  - `create_async_engine()` с `TACITUS_DATABASE_URL`
+  - `AsyncSessionLocal` через `async_sessionmaker`
+- [ ] Обновить `ansible/roles/app_deploy`:
+  - Добавить сервис `postgres` в шаблон `docker-compose.yml`
+  - Настроить `POSTGRES_PASSWORD` через `.env.j2`
+  - Backup-задача перед миграциями (опционально)
 
 ---
 
@@ -293,6 +341,7 @@
 | Streaming       | RTSP / RTSPS            | TCP + TLS (optional/strict)            |
 | Auth            | HTTP Basic (per-path)   | `publishUser` / `readUser`             |
 | Encryption      | TLS 1.2+, Fernet        | OpenSSL, `cryptography`                |
+| Database        | PostgreSQL 16           | `asyncpg`, SQLAlchemy 2.0, Alembic     |
 | Storage         | MinIO / S3              | SSE-S3 / SSE-KMS (опционально)         |
 | Test            | pytest, ffmpeg, openssl | `openssl s_client` для RTSPS probe     |
 
@@ -311,6 +360,8 @@
 - **FR-004**: Каждый поток имеет уникальные `publishUser` / `publishPass`.
 - **FR-005**: RTSPS доступен на настраиваемом порту (default `8322`).
 - **FR-006**: Шифрование записей перед выгрузкой в S3 включено через env var.
+- **FR-007**: Конфигурации потоков хранятся в PostgreSQL и переживают
+  перезапуск контейнеров.
 
 ### Нефункциональные (NFR)
 
@@ -321,6 +372,8 @@
   сервера).
 - **NFR-004**: Повторный запуск Ansible не пересоздаёт сертификаты, если они
   валидны.
+- **NFR-005**: PostgreSQL-данные сохраняются между перезапусками через Docker
+  volume (`postgres-data`).
 
 ---
 
@@ -333,6 +386,7 @@
 | Self-signed certs вызывают warnings в FFmpeg/ffplay | Документировать `--no-check-certificate` для тестов; production — Let's Encrypt |
 | Шифрование архивов увеличивает CPU load cleanup-сервиса | Тестировать производительность; Fernet — быстрый (AES-128-CBC) |
 | Per-path credentials усложняют Jinja2-шаблон | Использовать Ansible `loop` + `dict` для `mediamtx_paths` |
+| Добавление PostgreSQL усложняет локальный старт | `docker-compose.yml` поднимает Postgres автоматически; dev-defaults через `.env` |
 
 ---
 
@@ -347,5 +401,7 @@
 - [ ] Архивный сегмент шифруется перед загрузкой в S3 и успешно
   расшифровывается.
 - [ ] Ansible деплоит MediaMTX с RTSPS и per-path auth без ошибок.
+- [ ] PostgreSQL поднимается в Docker Compose, миграции применяются
+  автоматически (init-контейнер или `alembic upgrade head` в entrypoint).
 - [ ] `ruff check .` и `pytest tests/` проходят без ошибок.
 - [ ] Документация (`docs/`, `README.md`) обновлена.
