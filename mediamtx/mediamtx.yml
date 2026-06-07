@@ -1,5 +1,12 @@
 logLevel: info
 
+# Включить только RTSP-приём; ретрансляция по умолчанию отключена
+rtsp: yes
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+
 paths:
   cam1:
     source: publisher

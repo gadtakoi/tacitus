@@ -86,16 +86,12 @@ Docker Compose, получает настройки через `.env`, прок�
 
 ### 3.2. Конфигурация MediaMTX
 
-- [ ] Создать `mediamtx/mediamtx.yml` (или конфигурация через env-переменные):
-  - [ ] `logLevel: info`
-  - [ ] `rtspAddress: :8554`
-  - [ ] `rtmpAddress: :1935`
-  - [ ] `hlsAddress: :8888`
-  - [ ] `webrtcAddress: :8889`
-  - [ ] `srtAddress: :8890`
-  - [ ] `paths:` — секция с примерами путей (например, `cam1:` с `source: publisher`)
-- [ ] Проброс `mediamtx.yml` в контейнер через volume (если используется файл)
-  или полная конфигурация через env-переменные (`MTX_*`)
+- [x] Создать `mediamtx/mediamtx.yml` (или конфигурация через env-переменные):
+  - [x] `logLevel: info`
+  - [x] `rtsp: yes` — RTSP включён
+  - [x] `rtmp: no`, `hls: no`, `webrtc: no`, `srt: no` — ретрансляция отключена
+  - [x] `paths:` — секция с примерами путей (`cam1:` с `source: publisher`)
+- [x] Проброс `mediamtx.yml` в контейнер через volume (`./mediamtx/mediamtx.yml:/mediamtx.yml:ro`)
 - [ ] Убедиться, что MediaMTX запускается без ошибок в стеке `docker compose up`
 
 ### 3.3. Интеграция с Nginx
