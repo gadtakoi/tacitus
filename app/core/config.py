@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     log_max_bytes: int = 10_485_760  # 10 MB
     log_backup_count: int = 5
 
+    # Database settings
+    database_url: str = "postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus"
+
     # Sentry settings
     sentry_dsn: str = ""
     sentry_environment: str = "development"
