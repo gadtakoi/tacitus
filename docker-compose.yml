@@ -144,7 +144,7 @@ services:
     networks:
       - tacitus-network
     healthcheck:
-      test: ["CMD", "sh", "-c", "echo > /dev/tcp/localhost/${TACITUS_MTX_RTSP_PORT:-8554}"]
+      test: ["CMD-SHELL", "nc -z localhost ${TACITUS_MTX_RTSP_PORT:-8554}"]
       interval: 10s
       timeout: 5s
       retries: 5

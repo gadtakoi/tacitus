@@ -170,21 +170,22 @@ Docker Compose, получает настройки через `.env`, прок�
 
 ### 3.7. Тестирование и верификация
 
-- [ ] Локальное тестирование Docker Compose:
-  - [ ] `docker compose up` поднимает полный стек (app + nginx + minio + frontend + mediamtx)
-  - [ ] MediaMTX слушает RTSP на порту `8554`
-  - [ ] FFmpeg может опубликовать тестовый поток:
+- [x] Локальное тестирование Docker Compose:
+  - [x] `docker compose up` поднимает полный стек (app + nginx + minio + frontend + mediamtx)
+  - [x] MediaMTX слушает RTSP на порту `8554`
+  - [x] FFmpeg может опубликовать тестовый поток:
     `ffmpeg -re -f lavfi -i testsrc=duration=60:size=640x480:rate=30 -f rtsp rtsp://localhost:8554/live`
-  - [ ] HLS плейлист доступен: `curl http://localhost/hls/live/index.m3u8` → 200
-  - [ ] WebRTC страница доступна: `curl http://localhost/webrtc/live` → 200
+  - [x] Запись потока работает: сегменты появляются в `./recordings/live/`
+  - [ ] HLS плейлист доступен: `curl http://localhost/hls/live/index.m3u8` → 200 (отключено в 3.6)
+  - [ ] WebRTC страница доступна: `curl http://localhost/webrtc/live` → 200 (отключено в 3.6)
 - [ ] Интеграционные тесты Ansible:
-  - [ ] Playbook выполняется без ошибок на тестовом хосте
+  - [ ] Playbook выполняется без ошибок на тестовом хосте (не запускался в текущем окружении)
   - [ ] Повторный прогон подтверждает идемпотентность (`changed=0`)
-- [ ] Security checklist:
-  - [ ] Порты MediaMTX не открыты наружу напрямую (только через Nginx, кроме RTSP)
-  - [ ] Нет hardcoded credentials в `mediamtx.yml`
-  - [ ] `.env` содержит чувствительные данные и в `.gitignore`
-  - [ ] RTSP UDP порты (8000/8001) не экспонируются без необходимости
+- [x] Security checklist:
+  - [x] Порты MediaMTX не открыты наружу напрямую (только через Nginx, кроме RTSP)
+  - [x] Нет hardcoded credentials в `mediamtx.yml`
+  - [x] `.env` содержит чувствительные данные и в `.gitignore`
+  - [x] RTSP UDP порты (8000/8001) не экспонируются без необходимости
 
 ---
 
@@ -231,7 +232,7 @@ Docker Compose, получает настройки через `.env`, прок�
 | 3.4 API FastAPI (опционально)    | [ ]           |             |                |
 | 3.5 Ansible роль                 | [x]           | 2026-06-07  | 2026-06-07     |
 | 3.6 Запись потоков и управление архивами | [x]   | 2026-06-07  | 2026-06-07     |
-| 3.7 Тестирование и верификация   | [ ]           |             |                |
+| 3.7 Тестирование и верификация   | [~]           | 2026-06-07  | 2026-06-07     |
 
 ---
 

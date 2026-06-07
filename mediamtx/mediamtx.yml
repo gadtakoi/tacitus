@@ -21,3 +21,5 @@ pathDefaults:
 paths:
   cam1:
     source: publisher
+  live:
+    source: publisher
