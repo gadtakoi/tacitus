@@ -24,6 +24,10 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
     networks:
       - tacitus-network
     tmpfs:
@@ -193,6 +197,47 @@ services:
           cpus: '0.1'
           memory: 64M
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: tacitus-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-tacitus}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tacitus}
+      - POSTGRES_DB=${POSTGRES_DB:-tacitus}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tacitus-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  db-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tacitus-app:0.1.0
+    container_name: tacitus-db-migrations
+    env_file:
+      - .env
+    environment:
+      - TACITUS_DATABASE_URL=${TACITUS_DATABASE_URL:-postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tacitus-network
+    command: >
+      sh -c "pip install alembic asyncpg sqlalchemy && alembic upgrade head"
+
 volumes:
   minio-data:
   letsencrypt:
@@ -200,6 +245,7 @@ volumes:
   nginx-logs:
   nginx-run:
   app-logs:
+  postgres-data:
 
 networks:
   tacitus-network:
