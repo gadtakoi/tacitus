@@ -96,16 +96,16 @@ Docker Compose, получает настройки через `.env`, прок�
 
 ### 3.3. Интеграция с Nginx
 
-- [ ] Обновить `nginx/nginx.conf`:
-  - [ ] Проксирование HLS: `/hls/` → `mediamtx:8888`
-  - [ ] Проксирование WebRTC: `/webrtc/` → `mediamtx:8889`
-  - [ ] Проксирование RTSP over HTTP (если нужно): `/rtsp/` → `mediamtx:8554`
-  - [ ] Заголовки `X-Forwarded-*` для WebRTC
-  - [ ] CORS-заголовки для HLS/WebRTC (если нужно)
-- [ ] Обновить `nginx/Dockerfile` (если нужно) — обычно не требуется
+- [x] Обновить `nginx/nginx.conf`:
+  - [x] Проксирование HLS: `/hls/` → `mediamtx:8888`
+  - [x] Проксирование WebRTC: `/webrtc/` → `mediamtx:8889`
+  - [x] Заголовки `X-Forwarded-*` для WebRTC
+  - [x] WebSocket-заголовки (`Upgrade`, `Connection`) для WebRTC-сигналинга
+  - [x] CORS-заголовки для HLS/WebRTC
+- [x] `nginx/Dockerfile` не требует изменений
 - [ ] Проверить, что Nginx корректно проксирует потоки:
-  - [ ] `curl http://localhost/hls/cam1/index.m3u8` → 200 OK
-  - [ ] `curl http://localhost/webrtc/cam1` → 200 OK
+  - [ ] `curl http://localhost/hls/cam1/index.m3u8` → 200 OK (требует `hls: yes` в `mediamtx.yml`)
+  - [ ] `curl http://localhost/webrtc/cam1` → 200 OK (требует `webrtc: yes` в `mediamtx.yml`)
 
 ### 3.4. API FastAPI для управления потоками (опционально, MVP)
 
