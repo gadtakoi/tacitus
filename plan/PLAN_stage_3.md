@@ -150,7 +150,7 @@
 
 ### 4.3. Добавление badge
 
-- [x] Использовать shields.io формат: `https://img.shields.io/badge/coverage-92%25-green`
+- [x] Использовать shields.io формат: `https://img.shields.io/badge/coverage-86%25-green`
 - [x] Вставить в начало README.md под заголовком
 - [x] Badge должен отображать актуальный процент покрытия
 

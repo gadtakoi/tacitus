@@ -8,6 +8,7 @@
 - **python-jose** — JWT токены
 - **passlib** — хеширование паролей (pbkdf2_sha256)
 - **boto3** — клиент для S3 (MinIO)
+- **httpx** — HTTP-клиент для интеграции с MediaMTX
 
 ## Архитектура
 
@@ -18,7 +19,8 @@ app/
 │   └── routers/
 │       ├── auth.py          # /auth/* endpoints
 │       ├── files.py         # /files/* endpoints
-│       └── hello.py         # / endpoint
+│       ├── hello.py         # / endpoint
+│       └── streams.py       # /streams/* endpoints (MediaMTX monitoring)
 ├── core/
 │   ├── config.py            # Pydantic-settings (env vars)
 │   ├── exceptions.py        # AppError и обработчики
@@ -27,7 +29,8 @@ app/
 ├── schemas/
 │   ├── auth.py              # RegisterRequest, LoginRequest, TokenResponse
 │   ├── files.py             # FileUploadResponse, FileListResponse, ...
-│   └── hello.py             # HelloWorldResponse
+│   ├── hello.py             # HelloWorldResponse
+│   └── streams.py           # StreamItem, StreamsListResponse
 └── services/
     ├── auth_service.py      # Регистрация, логин, JWT lifecycle
     ├── hello_service.py     # Hello World business logic
@@ -41,18 +44,40 @@ app/
 - Пароли хешируются через `pbkdf2_sha256` (passlib)
 - In-memory хранилище пользователей (MVP)
 
+## MediaMTX интеграция
+
+Приложение предоставляет прокси-endpoints к Control API MediaMTX:
+
+| Endpoint          | Method | Auth   | Описание                                                |
+|-------------------|--------|--------|---------------------------------------------------------|
+| `/streams`        | GET    | Bearer | Список активных RTSP-потоков (`/v3/paths/list`)         |
+| `/streams/{path}` | GET    | Bearer | Информация о конкретном потоке (`/v3/paths/get/{path}`) |
+
+- Таймаут на запрос к MediaMTX: **10 секунд**
+- Обрабатываются `NetworkError`, `TimeoutException` и HTTP-ошибки MediaMTX
+- Логируются `request_id`, пользователь и имя потока без чувствительных данных
+
 ## Настройка
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-Переменные окружения (префикс `TACITUS_`):
+### Переменные окружения (префикс `TACITUS_`)
 
-- `JWT_SECRET` — обязательно переопределить в production
-- `JWT_ALGORITHM` — по умолчанию `HS256`
-- `JWT_EXPIRATION_MINUTES` — по умолчанию `30`
-- `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+| Переменная               | По умолчанию              | Описание                                                 |
+|--------------------------|---------------------------|----------------------------------------------------------|
+| `JWT_SECRET`             | `change-me-in-production` | Секрет для JWT (обязательно переопределить в production) |
+| `JWT_ALGORITHM`          | `HS256`                   | Алгоритм JWT                                             |
+| `JWT_EXPIRATION_MINUTES` | `30`                      | TTL access-токена                                        |
+| `S3_ENDPOINT`            | `http://minio:9000`       | URL S3-хранилища                                         |
+| `S3_ACCESS_KEY`          | `minioadmin`              | S3 access key                                            |
+| `S3_SECRET_KEY`          | `minioadmin`              | S3 secret key                                            |
+| `S3_BUCKET`              | `tacitus-files`           | Bucket для файлов                                        |
+| `MTX_API_URL`            | `http://mediamtx:9997/v3` | URL Control API MediaMTX                                 |
+| `MTX_RTSP_PORT`          | `8554`                    | Порт RTSP                                                |
+| `MTX_MAX_AGE_DAYS`       | `7`                       | Макс. возраст записей (для cleanup)                      |
+| `MTX_MAX_SIZE_GB`        | `50`                      | Макс. размер архива (для cleanup)                        |
 
 ## Логирование
 

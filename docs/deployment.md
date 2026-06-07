@@ -25,7 +25,7 @@ HTTPS.
 
 - Ubuntu 20.04+ / Debian 11+ (роль `docker_install` заточена под `apt`)
 - SSH-доступ с правами `sudo` (безпарольный `sudo` или пароль через `--ask-become-pass`)
-- Открытые порты: 80 и (опционально) 443
+- Открытые порты: 80 и (опционально) 443, а также настраиваемый RTSP-порт MediaMTX (по умолчанию 8554)
 
 ### Установка Ansible
 
@@ -184,11 +184,12 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 ### Выборочный запуск (теги)
 
-| Тег      | Что делает                                       |
-|----------|--------------------------------------------------|
-| `docker` | Только установка Docker                          |
-| `ssl`    | Только получение/обновление SSL                  |
-| `app`    | Только копирование кода и перезапуск контейнеров |
+| Тег        | Что делает                                       |
+|------------|--------------------------------------------------|
+| `docker`   | Только установка Docker                          |
+| `ssl`      | Только получение/обновление SSL                  |
+| `app`      | Только копирование кода и перезапуск контейнеров |
+| `mediamtx` | Только деплой MediaMTX конфигурации и запуск     |
 
 Пример — обновить только код без переустановки Docker:
 
@@ -219,6 +220,24 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   настраивает автообновление по cron.
 - **`app_deploy`** — создаёт директорию `/opt/tacitus`, копирует исходный код, Dockerfile, docker-compose.yml, рендерит
   `.env` из шаблона, запускает `docker compose up --build -d`.
+- **`mediamtx`** — создаёт директорию `./recordings` с владельцем `1000:1000`, рендерит `mediamtx.yml` из шаблона,
+  запускает/перезапускает контейнер `mediamtx`, выполняет pre-checks (доступность Docker, свободные порты) и
+  post-checks (healthcheck контейнера).
+
+### MediaMTX-специфичные переменные
+
+| Переменная                 | По умолчанию | Описание                        |
+|----------------------------|--------------|---------------------------------|
+| `mediamtx_rtsp_port`       | `8554`       | Порт RTSP                       |
+| `mediamtx_rtmp_port`       | `1935`       | Порт RTMP (отключен)            |
+| `mediamtx_hls_port`        | `8888`       | Порт HLS (отключен)             |
+| `mediamtx_webrtc_port`     | `8889`       | Порт WebRTC (отключен)          |
+| `mediamtx_srt_port`        | `8890`       | Порт SRT (отключен)             |
+| `mediamtx_ice_port`        | `8189`       | Порт WebRTC ICE (отключен)      |
+| `mediamtx_rtsp_transports` | `tcp`        | Транспорт RTSP                  |
+| `mediamtx_max_age_days`    | `7`          | Макс. возраст записей (дней)    |
+| `mediamtx_max_size_gb`     | `50`         | Макс. размер архива (ГБ)        |
+| `mediamtx_paths`           | `cam1`       | Список путей/камер              |
 
 ### Устранение неполадок
 
@@ -250,6 +269,17 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   ssh root@1.2.3.4 "cd /opt/tacitus && docker compose logs -f app"
   ```
 - Убедитесь, что JWT_SECRET ≥ 8 символов и все обязательные переменные заданы
+
+**MediaMTX не проходит healthcheck**
+
+- Проверьте, что порт 8554 не занят другим процессом:
+  ```bash
+  ssh root@1.2.3.4 "ss -tlnp | grep 8554"
+  ```
+- Проверьте логи контейнера:
+  ```bash
+  ssh root@1.2.3.4 "cd /opt/tacitus && docker compose logs -f mediamtx"
+  ```
 
 ---
 
