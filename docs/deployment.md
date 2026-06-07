@@ -135,7 +135,8 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   -e tacitus_s3_secret_key="$(openssl rand -hex 32)"
 ```
 
-> ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` прямо в командной строке (для разовых деплоев) или через переменные окружения управляющей машины:
+> ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` прямо в командной строке (для разовых
+> деплоев) или через переменные окружения управляющей машины:
 >
 > ```bash
 > ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
@@ -226,18 +227,18 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 ### MediaMTX-специфичные переменные
 
-| Переменная                 | По умолчанию | Описание                        |
-|----------------------------|--------------|---------------------------------|
-| `mediamtx_rtsp_port`       | `8554`       | Порт RTSP                       |
-| `mediamtx_rtmp_port`       | `1935`       | Порт RTMP (отключен)            |
-| `mediamtx_hls_port`        | `8888`       | Порт HLS (отключен)             |
-| `mediamtx_webrtc_port`     | `8889`       | Порт WebRTC (отключен)          |
-| `mediamtx_srt_port`        | `8890`       | Порт SRT (отключен)             |
-| `mediamtx_ice_port`        | `8189`       | Порт WebRTC ICE (отключен)      |
-| `mediamtx_rtsp_transports` | `tcp`        | Транспорт RTSP                  |
-| `mediamtx_max_age_days`    | `7`          | Макс. возраст записей (дней)    |
-| `mediamtx_max_size_gb`     | `50`         | Макс. размер архива (ГБ)        |
-| `mediamtx_paths`           | `cam1`       | Список путей/камер              |
+| Переменная                 | По умолчанию | Описание                     |
+|----------------------------|--------------|------------------------------|
+| `mediamtx_rtsp_port`       | `8554`       | Порт RTSP                    |
+| `mediamtx_rtmp_port`       | `1935`       | Порт RTMP (отключен)         |
+| `mediamtx_hls_port`        | `8888`       | Порт HLS (отключен)          |
+| `mediamtx_webrtc_port`     | `8889`       | Порт WebRTC (отключен)       |
+| `mediamtx_srt_port`        | `8890`       | Порт SRT (отключен)          |
+| `mediamtx_ice_port`        | `8189`       | Порт WebRTC ICE (отключен)   |
+| `mediamtx_rtsp_transports` | `tcp`        | Транспорт RTSP               |
+| `mediamtx_max_age_days`    | `7`          | Макс. возраст записей (дней) |
+| `mediamtx_max_size_gb`     | `50`         | Макс. размер архива (ГБ)     |
+| `mediamtx_paths`           | `cam1`       | Список путей/камер           |
 
 ### Устранение неполадок
 
