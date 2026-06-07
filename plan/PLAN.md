@@ -117,37 +117,37 @@ Docker Compose, получает настройки через `.env`, прок�
 
 ### 3.5. Ansible — развёртывание MediaMTX
 
-- [ ] Создать роль `ansible/roles/mediamtx/`:
-  - [ ] `tasks/main.yml`:
-    - [ ] Убедиться, что Docker установлен (зависимость от `docker_install`)
-    - [ ] Создать директорию для конфигурации MediaMTX (`/opt/tacitus/mediamtx/`)
-    - [ ] Копировать `mediamtx.yml` на хост (если используется файл конфигурации)
-    - [ ] Добавить сервис `mediamtx` в `docker-compose.yml` (или отдельный compose-файл)
-    - [ ] Запустить `docker compose up -d mediamtx`
-  - [ ] `templates/mediamtx.yml.j2` — шаблон конфигурации с переменными из `group_vars`:
-    - [ ] `rtsp_port` — порт RTSP
-    - [ ] `rtmp_port` — порт RTMP
-    - [ ] `hls_port` — порт HLS
-    - [ ] `webrtc_port` — порт WebRTC
-    - [ ] `srt_port` — порт SRT
-    - [ ] `paths` — список путей/камер из inventory
-  - [ ] `defaults/main.yml` — дефолты для роли
-- [ ] Обновить `ansible/playbook.yml`:
-  - [ ] Добавить роль `mediamtx` после `app_deploy`
-- [ ] Обновить `ansible/group_vars/all.yml` (или создать `mediamtx.yml`):
-  - [ ] `mediamtx_rtsp_port: 8554`
-  - [ ] `mediamtx_rtmp_port: 1935`
-  - [ ] `mediamtx_hls_port: 8888`
-  - [ ] `mediamtx_webrtc_port: 8889`
-  - [ ] `mediamtx_srt_port: 8890`
-  - [ ] `mediamtx_ice_port: 8189`
-  - [ ] `mediamtx_paths:` — список камер/путей
-- [ ] Обновить `ansible/inventory/hosts.yml` (опционально):
-  - [ ] Добавить переменные хоста для конкретных камер
-- [ ] Pre-checks / post-checks:
-  - [ ] Проверка, что порты свободны перед деплоем
-  - [ ] Проверка `curl http://localhost:8888` (HLS endpoint) после деплоя
-  - [ ] Проверка `docker ps` — контейнер `tacitus-mediamtx` в статусе `healthy`
+- [x] Создать роль `ansible/roles/mediamtx/`:
+  - [x] `tasks/main.yml`:
+    - [x] Убедиться, что Docker установлен (зависимость от `docker_install`)
+    - [x] Создать директорию для конфигурации MediaMTX (`/opt/tacitus/mediamtx/`)
+    - [x] Копировать `mediamtx.yml` на хост (если используется файл конфигурации)
+    - [x] Добавить сервис `mediamtx` в `docker-compose.yml` (или отдельный compose-файл)
+    - [x] Запустить `docker compose up -d mediamtx`
+  - [x] `templates/mediamtx.yml.j2` — шаблон конфигурации с переменными из `group_vars`:
+    - [x] `rtsp_port` — порт RTSP
+    - [x] `rtmp_port` — порт RTMP
+    - [x] `hls_port` — порт HLS
+    - [x] `webrtc_port` — порт WebRTC
+    - [x] `srt_port` — порт SRT
+    - [x] `paths` — список путей/камер из inventory
+  - [x] `defaults/main.yml` — дефолты для роли
+- [x] Обновить `ansible/playbook.yml`:
+  - [x] Добавить роль `mediamtx` после `app_deploy`
+- [x] Обновить `ansible/group_vars/all.yml` (или создать `mediamtx.yml`):
+  - [x] `mediamtx_rtsp_port: 8554`
+  - [x] `mediamtx_rtmp_port: 1935`
+  - [x] `mediamtx_hls_port: 8888`
+  - [x] `mediamtx_webrtc_port: 8889`
+  - [x] `mediamtx_srt_port: 8890`
+  - [x] `mediamtx_ice_port: 8189`
+  - [x] `mediamtx_paths:` — список камер/путей
+- [x] Обновить `ansible/inventory/hosts.yml` (опционально):
+  - [x] Добавить переменные хоста для конкретных камер
+- [x] Pre-checks / post-checks:
+  - [x] Проверка, что порты свободны перед деплоем
+  - [x] Проверка `curl http://localhost:8888` (HLS endpoint) после деплоя
+  - [x] Проверка `docker ps` — контейнер `tacitus-mediamtx` в статусе `healthy`
 
 ### 3.6. Запись потоков и управление архивами
 
@@ -229,7 +229,7 @@ Docker Compose, получает настройки через `.env`, прок�
 | 3.2 Конфигурация MediaMTX        | [ ]           |             |                |
 | 3.3 Интеграция с Nginx           | [ ]           |             |                |
 | 3.4 API FastAPI (опционально)    | [ ]           |             |                |
-| 3.5 Ansible роль                 | [ ]           |             |                |
+| 3.5 Ansible роль                 | [x]           | 2026-06-07  | 2026-06-07     |
 | 3.6 Запись потоков и управление архивами | [ ]   |             |                |
 | 3.7 Тестирование и верификация   | [ ]           |             |                |
 

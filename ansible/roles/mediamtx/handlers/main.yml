@@ -1,0 +1,5 @@
+---
+- name: Restart MediaMTX
+  ansible.builtin.command:
+    cmd: "docker compose restart mediamtx"
+    chdir: "{{ tacitus_deploy_dir }}"

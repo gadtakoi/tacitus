@@ -18,6 +18,9 @@
     - role: app_deploy
       tags: [app, deploy]
 
+    - role: mediamtx
+      tags: [mediamtx]
+
   post_tasks:
     - name: Post-check | Verify HTTP application responds
       ansible.builtin.uri:

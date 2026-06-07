@@ -22,6 +22,21 @@ tacitus_s3_secret_key: "minioadmin"
 # Docker settings
 docker_user: "{{ ansible_user }}"
 
+# MediaMTX settings
+mediamtx_rtsp_port: 8554
+mediamtx_rtmp_port: 1935
+mediamtx_hls_port: 8888
+mediamtx_webrtc_port: 8889
+mediamtx_srt_port: 8890
+mediamtx_ice_port: 8189
+mediamtx_rtsp_transports: tcp
+mediamtx_webrtc_additional_hosts: ""
+mediamtx_api_url: "http://mediamtx:9997/v3"
+
+mediamtx_paths:
+  - name: cam1
+    source: publisher
+
 # Pre/post check settings
 app_health_url: "http://localhost:{{ nginx_host_port }}/health"
 app_hello_url: "http://localhost:{{ nginx_host_port }}/"

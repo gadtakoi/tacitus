@@ -1,0 +1,93 @@
+---
+# Pre-checks
+- name: Pre-check | Verify Docker daemon is accessible
+  ansible.builtin.command: docker version --format '{{ '{{' }} .Server.Version {{ '}}' }}'
+  changed_when: false
+
+- name: Pre-check | Verify Docker Compose plugin is installed
+  ansible.builtin.command: docker compose version
+  changed_when: false
+
+- name: Pre-check | Check if MediaMTX container already exists
+  ansible.builtin.command: docker ps -aq -f name=tacitus-mediamtx
+  register: mtx_container
+  changed_when: false
+
+- name: Pre-check | Ensure MediaMTX TCP ports are free
+  ansible.builtin.wait_for:
+    port: "{{ item }}"
+    state: stopped
+    timeout: 2
+  loop:
+    - "{{ mediamtx_rtsp_port }}"
+    - "{{ mediamtx_rtmp_port }}"
+    - "{{ mediamtx_hls_port }}"
+    - "{{ mediamtx_webrtc_port }}"
+    - "{{ mediamtx_srt_port }}"
+  when: mtx_container.stdout == ""
+
+- name: Pre-check | Ensure MediaMTX ICE UDP port is free
+  ansible.builtin.wait_for:
+    port: "{{ mediamtx_ice_port }}"
+    proto: udp
+    state: stopped
+    timeout: 2
+  when: mtx_container.stdout == ""
+
+# Configuration
+- name: Ensure MediaMTX configuration directory exists
+  ansible.builtin.file:
+    path: "{{ tacitus_deploy_dir }}/mediamtx"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Render MediaMTX configuration
+  ansible.builtin.template:
+    src: mediamtx.yml.j2
+    dest: "{{ tacitus_deploy_dir }}/mediamtx/mediamtx.yml"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart MediaMTX
+
+# Deployment
+- name: Start or update MediaMTX container
+  ansible.builtin.command:
+    cmd: "docker compose up -d mediamtx"
+    chdir: "{{ tacitus_deploy_dir }}"
+  register: compose_up
+  changed_when: >
+    'Started' in compose_up.stdout or
+    'Created' in compose_up.stdout or
+    'Recreated' in compose_up.stdout or
+    'Restarted' in compose_up.stdout
+
+# Post-checks
+- name: Post-check | Wait for MediaMTX RTSP port to be reachable
+  ansible.builtin.wait_for:
+    port: "{{ mediamtx_rtsp_port }}"
+    state: started
+    timeout: 30
+
+- name: Post-check | Verify MediaMTX container is healthy
+  ansible.builtin.command:
+    cmd: "docker inspect --format='{{ '{{' }} .State.Health.Status {{ '}}' }}' tacitus-mediamtx"
+  register: mtx_health
+  changed_when: false
+  until: mtx_health.stdout == "healthy"
+  retries: 10
+  delay: 3
+
+- name: Post-check | Probe MediaMTX HLS endpoint
+  ansible.builtin.uri:
+    url: "http://localhost:{{ mediamtx_hls_port }}/"
+    method: GET
+    status_code: [200, 404]
+  register: hls_probe
+  ignore_errors: true
+
+- name: Post-check | Report MediaMTX deployment status
+  ansible.builtin.debug:
+    msg: "MediaMTX deployed. Container health: {{ mtx_health.stdout }}, HLS probe: {{ hls_probe.status | default('unreachable') }}"
