@@ -1,5 +1,9 @@
 logLevel: info
 
+# Control API для мониторинга потоков (доступен только внутри сети Docker)
+api: yes
+apiAddress: :9997
+
 # Включить только RTSP-приём; ретрансляция по умолчанию отключена
 rtsp: yes
 rtmp: no

@@ -109,11 +109,11 @@ Docker Compose, получает настройки через `.env`, прок�
 
 ### 3.4. API FastAPI для управления потоками (опционально, MVP)
 
-- [ ] Добавить эндпоинты (если требуется управление путями через API):
-  - [ ] `GET /streams` — список активных потоков (запрос к MediaMTX API)
-  - [ ] `GET /streams/{path}` — информация о конкретном потоке
-- [ ] Интеграция с auth: доступ к `/streams/*` только с валидным JWT
-- [ ] Pydantic-схемы для ответов MediaMTX
+- [x] Добавить эндпоинты (если требуется управление путями через API):
+  - [x] `GET /streams` — список активных потоков (запрос к MediaMTX API `GET /v3/paths/list`)
+  - [x] `GET /streams/{path}` — информация о конкретном потоке (`GET /v3/paths/get/{name}`)
+- [x] Интеграция с auth: доступ к `/streams/*` только с валидным JWT (`Depends(get_current_user)`)
+- [x] Pydantic-схемы для ответов MediaMTX (`StreamItem`, `StreamsListResponse`)
 
 ### 3.5. Ansible — развёртывание MediaMTX
 

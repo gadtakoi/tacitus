@@ -9,6 +9,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.routers.auth import router as auth_router
 from app.api.routers.files import router as files_router
 from app.api.routers.hello import router as hello_router
+from app.api.routers.streams import router as streams_router
 from app.core.config import settings, validate_startup_settings
 from app.core.exceptions import AppError, app_exception_handler, generic_exception_handler
 from app.core.ip import get_client_ip
@@ -56,6 +57,7 @@ app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(hello_router)
 app.include_router(auth_router)
 app.include_router(files_router)
+app.include_router(streams_router)
 
 
 @app.get("/health")

@@ -18,6 +18,7 @@ services:
       - TACITUS_S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
       - TACITUS_S3_BUCKET=${S3_BUCKET:-tacitus-files}
       - TACITUS_JWT_SECRET=${TACITUS_JWT_SECRET:-change-me-in-production}
+      - TACITUS_MTX_API_URL=${TACITUS_MTX_API_URL:-http://mediamtx:9997/v3}
     depends_on:
       minio:
         condition: service_healthy
