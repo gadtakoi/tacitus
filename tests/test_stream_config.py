@@ -1,8 +1,10 @@
-"""Tests for stream configuration schemas and service."""
+"""Tests for stream configuration schemas, repository and service."""
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.db.models import Base
 from app.schemas.streams import (
     StreamConfig,
     StreamCreateRequest,
@@ -10,6 +12,46 @@ from app.schemas.streams import (
     StreamUpdateRequest,
 )
 from app.services import stream_config_service as svc
+
+TEST_DATABASE_URL = "postgresql+asyncpg://tacitus:tacitus@localhost:15432/tacitus"
+
+
+@pytest.fixture(scope="session")
+def anyio_backend() -> str:
+    """Specify anyio backend for pytest-asyncio."""
+    return "asyncio"
+
+
+@pytest.fixture(scope="session")
+async def engine():
+    """Create async engine for tests."""
+    test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield test_engine
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await test_engine.dispose()
+
+
+@pytest.fixture
+async def db_session(engine) -> AsyncSession:
+    """Provide a transactional database session that rolls back after each test."""
+    async with engine.connect() as connection:
+        trans = await connection.begin()
+        session_maker = async_sessionmaker(
+            connection,
+            expire_on_commit=False,
+            autoflush=False,
+            autocommit=False,
+        )
+        session = session_maker()
+        try:
+            yield session
+        finally:
+            await session.close()
+            await trans.rollback()
+
 
 # ---------------------------------------------------------------------------
 # Schema validation tests
@@ -131,51 +173,47 @@ class TestStreamUpdateRequestValidation:
 
 
 # ---------------------------------------------------------------------------
-# Service tests
+# Service tests (with real PostgreSQL)
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def clear_streams() -> None:
-    """Clear all streams before each test."""
-    svc.clear_all_streams()
-
-
+@pytest.mark.anyio
 class TestStreamConfigService:
-    """Test stream configuration service CRUD operations."""
+    """Test stream configuration service CRUD operations via database."""
 
-    def test_create_stream(self) -> None:
+    async def test_create_stream(self, db_session: AsyncSession) -> None:
         req = StreamCreateRequest(name="cam1", source="publisher")
-        config = svc.create_stream(req)
+        config = await svc.create_stream(db_session, req)
         assert config.name == "cam1"
-        assert svc.stream_exists("cam1") is True
+        assert await svc.stream_exists(db_session, "cam1") is True
 
-    def test_create_duplicate_raises(self) -> None:
+    async def test_create_duplicate_raises(self, db_session: AsyncSession) -> None:
         req = StreamCreateRequest(name="cam1", source="publisher")
-        svc.create_stream(req)
+        await svc.create_stream(db_session, req)
         with pytest.raises(svc.StreamConfigError, match="already exists"):
-            svc.create_stream(req)
+            await svc.create_stream(db_session, req)
 
-    def test_list_streams_ordered_by_time(self) -> None:
-        svc.create_stream(StreamCreateRequest(name="cam1", source="publisher"))
-        svc.create_stream(StreamCreateRequest(name="cam2", source="publisher"))
-        streams = svc.list_streams()
+    async def test_list_streams_ordered_by_time(self, db_session: AsyncSession) -> None:
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam1", source="publisher"))
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam2", source="publisher"))
+        streams = await svc.list_streams(db_session)
         assert len(streams) == 2
         assert streams[0].name == "cam1"
         assert streams[1].name == "cam2"
 
-    def test_get_stream_found(self) -> None:
-        svc.create_stream(StreamCreateRequest(name="cam1", source="publisher"))
-        found = svc.get_stream("cam1")
+    async def test_get_stream_found(self, db_session: AsyncSession) -> None:
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam1", source="publisher"))
+        found = await svc.get_stream(db_session, "cam1")
         assert found is not None
         assert found.name == "cam1"
 
-    def test_get_stream_not_found(self) -> None:
-        assert svc.get_stream("nonexistent") is None
+    async def test_get_stream_not_found(self, db_session: AsyncSession) -> None:
+        assert await svc.get_stream(db_session, "nonexistent") is None
 
-    def test_update_stream(self) -> None:
-        svc.create_stream(StreamCreateRequest(name="cam1", source="publisher"))
-        updated = svc.update_stream(
+    async def test_update_stream(self, db_session: AsyncSession) -> None:
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam1", source="publisher"))
+        updated = await svc.update_stream(
+            db_session,
             "cam1",
             StreamUpdateRequest(source="rtsp://192.168.1.1/stream", record_enabled=False),
         )
@@ -183,46 +221,32 @@ class TestStreamConfigService:
         assert updated.record_enabled is False
         assert updated.updated_at > updated.created_at
 
-    def test_update_nonexistent_raises(self) -> None:
+    async def test_update_nonexistent_raises(self, db_session: AsyncSession) -> None:
         with pytest.raises(svc.StreamConfigError, match="not found"):
-            svc.update_stream("missing", StreamUpdateRequest(record_enabled=False))
+            await svc.update_stream(
+                db_session, "missing", StreamUpdateRequest(record_enabled=False)
+            )
 
-    def test_delete_stream(self) -> None:
-        svc.create_stream(StreamCreateRequest(name="cam1", source="publisher"))
-        svc.delete_stream("cam1")
-        assert svc.get_stream("cam1") is None
+    async def test_delete_stream(self, db_session: AsyncSession) -> None:
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam1", source="publisher"))
+        await svc.delete_stream(db_session, "cam1")
+        assert await svc.get_stream(db_session, "cam1") is None
 
-    def test_delete_nonexistent_raises(self) -> None:
+    async def test_delete_nonexistent_raises(self, db_session: AsyncSession) -> None:
         with pytest.raises(svc.StreamConfigError, match="not found"):
-            svc.delete_stream("missing")
+            await svc.delete_stream(db_session, "missing")
 
-    def test_stream_exists(self) -> None:
-        assert svc.stream_exists("cam1") is False
-        svc.create_stream(StreamCreateRequest(name="cam1", source="publisher"))
-        assert svc.stream_exists("cam1") is True
+    async def test_stream_exists(self, db_session: AsyncSession) -> None:
+        assert await svc.stream_exists(db_session, "cam1") is False
+        await svc.create_stream(db_session, StreamCreateRequest(name="cam1", source="publisher"))
+        assert await svc.stream_exists(db_session, "cam1") is True
 
-    def test_thread_safety_race_create(self) -> None:
-        """Simulate concurrent creation of same stream; only one succeeds."""
-        import threading
-        import time
-
-        errors = []
-        successes = []
-
-        def create() -> None:
-            try:
-                time.sleep(0.001)
-                svc.create_stream(StreamCreateRequest(name="race", source="publisher"))
-                successes.append(True)
-            except svc.StreamConfigError as e:
-                errors.append(str(e))
-
-        threads = [threading.Thread(target=create) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert len(successes) == 1
-        assert len(errors) == 9
-        assert svc.stream_exists("race") is True
+    async def test_concurrent_create_unique_constraint(self, db_session: AsyncSession) -> None:
+        """Verify database unique constraint prevents duplicate names."""
+        await svc.create_stream(
+            db_session, StreamCreateRequest(name="unique_cam", source="publisher")
+        )
+        with pytest.raises(svc.StreamConfigError, match="already exists"):
+            await svc.create_stream(
+                db_session, StreamCreateRequest(name="unique_cam", source="publisher")
+            )

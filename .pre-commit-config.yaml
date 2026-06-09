@@ -17,15 +17,15 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: bash -c '.venv/Scripts/python -m pytest tests/ -q'
-        language: system
-        types: [python]
-        pass_filenames: false
-        always_run: false
+
+#  - repo: local
+#    hooks:
+#      - id: pytest
+#        name: pytest
+#        entry: python -m pytest tests/ -q
+#        language: system
+#        types: [python]
+#        pass_filenames: false
 
 #      - id: pip-audit
 #        name: pip-audit

@@ -235,8 +235,12 @@ services:
         condition: service_healthy
     networks:
       - tacitus-network
+    working_dir: /app
+    volumes:
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./migrations:/app/migrations:ro
     command: >
-      sh -c "pip install alembic asyncpg sqlalchemy && alembic upgrade head"
+      sh -c "python -m alembic -c /app/alembic.ini upgrade head"
 
 volumes:
   minio-data:

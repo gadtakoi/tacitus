@@ -1,17 +1,13 @@
-"""In-memory stream configuration storage and management."""
+"""Stream configuration service backed by PostgreSQL."""
 
 import logging
-import threading
-from datetime import UTC, datetime
-from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.repositories.streams import StreamRepository, StreamRepositoryError
 from app.schemas.streams import StreamConfig, StreamCreateRequest, StreamUpdateRequest
 
 logger = logging.getLogger(__name__)
-
-# In-memory storage for stream configurations (MVP)
-_streams: dict[str, StreamConfig] = {}
-_streams_lock = threading.Lock()
 
 
 class StreamConfigError(Exception):
@@ -22,10 +18,11 @@ class StreamConfigError(Exception):
         super().__init__(message)
 
 
-def create_stream(request: StreamCreateRequest) -> StreamConfig:
+async def create_stream(db: AsyncSession, request: StreamCreateRequest) -> StreamConfig:
     """Create a new stream configuration.
 
     Args:
+        db: Database session.
         request: Stream creation request.
 
     Returns:
@@ -34,49 +31,49 @@ def create_stream(request: StreamCreateRequest) -> StreamConfig:
     Raises:
         StreamConfigError: If stream with given name already exists.
     """
-    with _streams_lock:
-        if request.name in _streams:
-            raise StreamConfigError(f"Stream '{request.name}' already exists")
-
-        config = StreamConfig(
-            name=request.name,
-            source=request.source,
-            record_enabled=request.record_enabled,
-            credentials=request.credentials
-            or StreamConfig.model_fields["credentials"].default_factory(),
-        )
-        _streams[request.name] = config
-        logger.info("Stream created", extra={"stream": config.name})
-        return config
+    repo = StreamRepository(db)
+    try:
+        model = await repo.create(request)
+    except StreamRepositoryError as exc:
+        raise StreamConfigError(exc.message) from exc
+    logger.info("Stream created", extra={"stream": model.name})
+    return _to_schema(model)
 
 
-def list_streams() -> list[StreamConfig]:
+async def list_streams(db: AsyncSession) -> list[StreamConfig]:
     """List all configured streams.
+
+    Args:
+        db: Database session.
 
     Returns:
         List of stream configurations ordered by creation time.
     """
-    with _streams_lock:
-        return sorted(_streams.values(), key=lambda s: s.created_at)
+    repo = StreamRepository(db)
+    models = await repo.list_all()
+    return [_to_schema(m) for m in models]
 
 
-def get_stream(name: str) -> StreamConfig | None:
+async def get_stream(db: AsyncSession, name: str) -> StreamConfig | None:
     """Get stream configuration by name.
 
     Args:
+        db: Database session.
         name: Stream name/path.
 
     Returns:
         Stream configuration or None if not found.
     """
-    with _streams_lock:
-        return _streams.get(name)
+    repo = StreamRepository(db)
+    model = await repo.get_by_name(name)
+    return _to_schema(model) if model else None
 
 
-def update_stream(name: str, request: StreamUpdateRequest) -> StreamConfig:
+async def update_stream(db: AsyncSession, name: str, request: StreamUpdateRequest) -> StreamConfig:
     """Update an existing stream configuration.
 
     Args:
+        db: Database session.
         name: Stream name to update.
         request: Update request with optional fields.
 
@@ -86,55 +83,62 @@ def update_stream(name: str, request: StreamUpdateRequest) -> StreamConfig:
     Raises:
         StreamConfigError: If stream does not exist.
     """
-    with _streams_lock:
-        existing = _streams.get(name)
-        if not existing:
-            raise StreamConfigError(f"Stream '{name}' not found")
-
-        update_data: dict[str, Any] = {"updated_at": datetime.now(UTC)}
-        if request.source is not None:
-            update_data["source"] = request.source
-        if request.record_enabled is not None:
-            update_data["record_enabled"] = request.record_enabled
-        if request.credentials is not None:
-            update_data["credentials"] = request.credentials
-
-        updated = existing.model_copy(update=update_data)
-        _streams[name] = updated
-        logger.info("Stream updated", extra={"stream": name})
-        return updated
+    repo = StreamRepository(db)
+    try:
+        model = await repo.update(name, request)
+    except StreamRepositoryError as exc:
+        raise StreamConfigError(exc.message) from exc
+    logger.info("Stream updated", extra={"stream": name})
+    return _to_schema(model)
 
 
-def delete_stream(name: str) -> None:
+async def delete_stream(db: AsyncSession, name: str) -> None:
     """Delete a stream configuration.
 
     Args:
+        db: Database session.
         name: Stream name to delete.
 
     Raises:
         StreamConfigError: If stream does not exist.
     """
-    with _streams_lock:
-        if name not in _streams:
-            raise StreamConfigError(f"Stream '{name}' not found")
-        del _streams[name]
-        logger.info("Stream deleted", extra={"stream": name})
+    repo = StreamRepository(db)
+    try:
+        await repo.delete(name)
+    except StreamRepositoryError as exc:
+        raise StreamConfigError(exc.message) from exc
+    logger.info("Stream deleted", extra={"stream": name})
 
 
-def stream_exists(name: str) -> bool:
+async def stream_exists(db: AsyncSession, name: str) -> bool:
     """Check if a stream configuration exists.
 
     Args:
+        db: Database session.
         name: Stream name to check.
 
     Returns:
         True if stream exists.
     """
-    with _streams_lock:
-        return name in _streams
+    repo = StreamRepository(db)
+    model = await repo.get_by_name(name)
+    return model is not None
 
 
-def clear_all_streams() -> None:
-    """Clear all stream configurations. Intended for testing only."""
-    with _streams_lock:
-        _streams.clear()
+def _to_schema(model) -> StreamConfig:
+    """Convert SQLAlchemy Stream model to Pydantic StreamConfig schema."""
+    from app.schemas.streams import StreamCredentials
+
+    return StreamConfig(
+        name=model.name,
+        source=model.source,
+        record_enabled=model.record_enabled,
+        credentials=StreamCredentials(
+            publish_user=model.publish_user,
+            publish_pass=model.publish_pass,
+            read_user=model.read_user,
+            read_pass=model.read_pass,
+        ),
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )

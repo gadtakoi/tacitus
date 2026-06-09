@@ -19,20 +19,20 @@
 
 - name: Copy application files
   ansible.builtin.copy:
-    src: "{{ item }}"
+    src: "{{ playbook_dir }}/../{{ item }}"
     dest: "{{ tacitus_deploy_dir }}/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0644"
   loop:
-    - "../../Dockerfile"
-    - "../../docker-compose.yml"
-    - "../../pyproject.toml"
+    - "Dockerfile"
+    - "docker-compose.yml"
+    - "pyproject.toml"
   notify: Restart Tacitus
 
 - name: Copy application source code
   ansible.builtin.copy:
-    src: "../../app/"
+    src: "{{ playbook_dir }}/../app/"
     dest: "{{ tacitus_deploy_dir }}/app/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -41,7 +41,7 @@
 
 - name: Copy nginx configuration
   ansible.builtin.copy:
-    src: "../../nginx/"
+    src: "{{ playbook_dir }}/../nginx/"
     dest: "{{ tacitus_deploy_dir }}/nginx/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -50,7 +50,7 @@
 
 - name: Copy frontend source code
   ansible.builtin.copy:
-    src: "../../frontend/"
+    src: "{{ playbook_dir }}/../frontend/"
     dest: "{{ tacitus_deploy_dir }}/frontend/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
@@ -59,7 +59,7 @@
 
 - name: Copy scripts
   ansible.builtin.copy:
-    src: "../../scripts/"
+    src: "{{ playbook_dir }}/../scripts/"
     dest: "{{ tacitus_deploy_dir }}/scripts/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"

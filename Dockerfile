@@ -28,6 +28,7 @@ RUN groupadd --gid 1000 tacitus && \
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+COPY --from=builder /usr/local/bin/alembic /usr/local/bin/alembic
 
 RUN chown -R tacitus:tacitus ${APP_HOME}
 

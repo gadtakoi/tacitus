@@ -10,6 +10,24 @@ docker compose up -d
 
 ## Развёртывание через Ansible
 
+### Option 1: WSL2 (Recommended)
+
+```bash
+# Install WSL2
+wsl --install -d Ubuntu
+wsl -d Ubuntu
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+uv pip install ansible-core
+
+mkdir ~/.ssh/
+ssh-keyscan -H 5.129.206.199 >> ~/.ssh/known_hosts
+
+# Inside WSL:
+cd /mnt/c/Users/BSPB/PycharmProjects/tacitus
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml -e target_host=11.22.33.44 -e deploy_user=root -e deploy_password="password"
+```
+
 Ansible-плейбук автоматически устанавливает Docker, копирует код проекта на сервер, создаёт файл окружения `.env` и
 запускает приложение через `docker compose`. При необходимости получает SSL-сертификат Let's Encrypt и настраивает
 HTTPS.
