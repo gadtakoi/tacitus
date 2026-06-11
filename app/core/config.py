@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus"
 
     # Rate limiting storage URI.
-    # Supported backends: "memory" (default, per-process), "redis://...",
-    # or a PostgreSQL URL compatible with the ``limits`` library.
-    rate_limit_storage_uri: str = "memory"
+    # Supported backends: "memory://" (default, per-process) or
+    # "redis://host:port" (recommended for production and multi-instance).
+    # The ``limits`` library is used under the hood by ``slowapi``.
+    rate_limit_storage_uri: str = "memory://"
 
     # Sentry settings
     sentry_dsn: str = ""

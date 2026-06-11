@@ -45,6 +45,16 @@ app/
 - Пароли хешируются через `pbkdf2_sha256` (passlib)
 - Пользователи, токены и security-события хранятся в PostgreSQL
 
+## Rate limiting
+
+- Глобальный лимитер на базе `slowapi` + `limits`.
+- Ключ лимита: `user:<sub>` для авторизованных запросов, иначе `ip:<client_ip>`.
+- Хранилище лимитов задаётся переменной `TACITUS_RATE_LIMIT_STORAGE_URI`:
+  - `memory://` — в процессе (dev, не подходит для нескольких инстансов);
+  - `redis://redis:6379` — общее хранилище для production / multi-instance.
+- Библиотека `limits` не поддерживает PostgreSQL в качестве storage, поэтому для
+  распределённых инсталляций используется Redis.
+
 ## Схема базы данных
 
 Бэкенд использует PostgreSQL через SQLAlchemy 2.0 (asyncpg). Ниже перечислены

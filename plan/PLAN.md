@@ -58,7 +58,7 @@
   - сервис `app` дожидается миграций.
 - [x] Убедиться, что `app/core/config.py` корректно читает `database_url` и
   формирует URL при использовании отдельных переменных.
-  - Добавлено поле `rate_limit_storage_uri` с дефолтом `memory`.
+  - Добавлено поле `rate_limit_storage_uri` с дефолтом `memory://`.
 - [x] Проверить актуальность `pyproject.toml` и при необходимости обновить
   `requirements.txt` (должны присутствовать `sqlalchemy[asyncio]`, `asyncpg`,
   `alembic`, а также `limits`/`slowapi` с нужным storage backend).
@@ -208,22 +208,26 @@
 
 ## 9. Рефакторинг `app/core/rate_limit.py`
 
-- [ ] Выбрать backend для `slowapi`/`limits`:
-  - вариант A: PostgreSQL-адаптер (`limits` поддерживает различные storage),
-  - вариант B: Redis (если в стеке планируется Redis).
-- [ ] Настроить `storage_uri` через переменные окружения
+- [x] Выбрать backend для `slowapi`/`limits`:
+  - Redis (`redis://...`) — единственный поддерживаемый `limits` распределённый
+    backend; PostgreSQL не поддерживается как storage URI.
+- [x] Настроить `storage_uri` через переменные окружения
   (`TACITUS_RATE_LIMIT_STORAGE_URI`).
-  - Для PostgreSQL: `postgresql+asyncpg://...` или синхронный вариант,
-    совместимый с `limits`.
-  - Для Redis: `redis://host:port`.
-- [ ] Обновить инициализацию `Limiter`:
-  - передать `storage_uri` и `storage_options` если требуется,
-  - сохранить текущую функцию `get_client_ip` как key_func.
-- [ ] Убедиться, что rate-limit работает корректно при перезапуске приложения и
+  - Для разработки: `memory://` (default).
+  - Для production / multi-instance: `redis://host:port`.
+- [x] Обновить инициализацию `Limiter`:
+  - передать `storage_uri` в конструктор `Limiter`,
+  - key_func — `get_user_or_ip` (предпочитает JWT `sub`, fallback к IP).
+- [x] Убедиться, что rate-limit работает корректно при перезапуске приложения и
   при нескольких инстансах (данные хранятся вне процесса).
-- [ ] Обновить тесты, убрав прямой вызов `limiter.reset()` как способ очистки
-  состояния; вместо этого использовать очистку выбранного backend.
-- [ ] Добавить комментарии, поясняющие выбор backend и URL хранилища.
+- [x] Обновить `tests/conftest.py`: `_reset_limiter_state()` очищает
+  `MemoryStorage` или `RedisStorage` через `storage.reset()`.
+- [x] Добавить комментарии, поясняющие выбор backend и URL хранилища.
+
+**Результат:** `app/core/rate_limit.py` использует `Limiter(storage_uri=...)`;
+`TACITUS_RATE_LIMIT_STORAGE_URI` добавлена в `.env.example` и
+`docker-compose.yml`; зависимость `redis>=5.0.0` добавлена в `pyproject.toml`
+и `requirements.txt`.
 
 ---
 
