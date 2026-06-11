@@ -1,407 +1,429 @@
-# План проекта Tacitus — мульти-потоковая архитектура и шифрование MediaMTX
+# План: Миграция in-memory хранилищ на PostgreSQL
 
-## 1. Цель
+## Цель
 
-Расширить интеграцию с **MediaMTX** для поддержки **множественных потоков** с
-индивидуальной конфигурацией и обеспечить **шифрование** на транспортном и
-прикладном уровнях.
+Полностью заменить процессные (in-memory) хранилища данных на PostgreSQL, сохранить
+существующую функциональность, улучшить надёжность и подготовить приложение к
+многоинстансной работе. В ходе работы весь новый и изменённый код должен получить
+подробные комментарии и docstring, а документация проекта — быть приведена в
+соответствие с новой архитектурой.
 
-**Конечный результат:**
-
-- Пользователь может создавать, редактировать и удалять видео-потоки через
-  FastAPI REST API и React UI.
-- Каждый поток имеет индивидуальные параметры (запись, аутентификация,
-  source-камера).
-- Публикация и чтение потоков защищены per-path credentials (`publishUser`,
-  `readUser`).
-- Опционально доступен **RTSPS** (RTSP over TLS) для шифрования сигнального
-  канала.
-- Записи (fmp4-сегменты) могут шифроваться перед выгрузкой в S3/MinIO.
+> **Важно:** этот план описывает только новый этап работ. Объединять его с
+> предыдущими планами (`PLAN_stage_*.md`) не требуется.
 
 ---
 
-## 2. Архитектура
+## Общие принципы выполнения
 
-```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   React SPA     │◄────►│  FastAPI (API)   │◄────►│   MediaMTX      │
-│  Streams page   │      │  /streams/*      │      │  Control API    │
-└─────────────────┘      └──────────────────┘      └────────┬────────┘
-                                                            │
-                       ┌────────────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │  RTSP / RTSPS   │◄── FFmpeg / IP-camera
-              │   Port 8554     │
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  ./recordings   │──► mediamtx-cleanup ──► S3/MinIO
-              └─────────────────┘          (encrypt at rest)
-```
-
-### Компоненты
-
-| Компонент         | Назначение                                           |
-|-------------------|------------------------------------------------------|
-| **FastAPI**       | CRUD потоков, управление credentials, прокси к MTX   |
-| **MediaMTX**      | RTSP/RTSPS сервер, запись, per-path auth             |
-| **React**         | UI списка потоков, форма добавления/редактирования   |
-| **S3/MinIO**      | Хранение зашифрованных архивов записей               |
-| **PostgreSQL**    | Хранение конфигураций потоков, пользователей, метаданных |
-| **Ansible**       | Деплой TLS-сертификатов, ротация credentials         |
+- [ ] Каждый пункт плана при реализации отмечается галочкой `[x]`.
+- [ ] Весь новый код снабжается docstring и inline-комментариями, поясняющими
+  "почему", а не только "что".
+- [ ] Любое изменение публичного поведения или архитектуры сопровождается
+  обновлением документации (`docs/*.md`, `.env.example`, `plan/DECISIONS.md`).
+- [ ] In-memory структуры удаляются только после того, как соответствующий
+  PostgreSQL-аналог полностью покрыт тестами.
 
 ---
 
-## 3. Этапы реализации
+## 1. Аудит текущих in-memory хранилищ
 
-### 3.1. Управление множественными потоками
-
-#### 3.1.1. Модель данных и хранение конфигурации
-
-- [x] Создать Pydantic-схемы:
-  - `StreamConfig` (name, source, record_enabled, publish_creds, read_creds,
-    created_at, updated_at)
-  - `StreamCreateRequest`, `StreamUpdateRequest`
-- [ ] Настроить **PostgreSQL** в `docker-compose.yml`:
-  - Сервис `postgres:18-alpine` с volume `postgres-data`
-  - Переменные окружения: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
-  - Healthcheck через `pg_isready`
-  - Сервис подключён к сети `tacitus-network`
-- [ ] Добавить **SQLAlchemy** + **asyncpg** в зависимости:
-  - `sqlalchemy[asyncio]>=2.0`, `asyncpg>=0.29`
-  - Обновить `pyproject.toml` и `requirements.txt`
-- [ ] Создать модели SQLAlchemy (`app/db/models.py`):
-  - `Stream` (id, name, source, record_enabled, publish_user, publish_pass,
-    read_user, read_pass, created_at, updated_at)
-  - Уникальный индекс на `name`
-- [ ] Настроить миграции **Alembic**:
-  - `alembic init migrations`
-  - Подключение к БД через `TACITUS_DATABASE_URL`
-  - Автогенерация миграций для модели `Stream`
-- [ ] Создать слой доступа к данным (`app/db/repositories/streams.py`):
-  - `create_stream()`, `get_stream_by_name()`, `list_streams()`,
-    `update_stream()`, `delete_stream()`
-  - Async SQLAlchemy session через `async_sessionmaker`
-- [ ] Рефакторинг `app/services/stream_config_service.py`:
-  - Заменить in-memory dict на вызовы к репозиторию БД
-  - Удалить `_streams: dict` и `_streams_lock`
-- [ ] Добавить валидацию: уникальность имени потока (на уровне БД + схемы),
-  допустимые символы в path
-
-#### 3.1.2. Backend API — CRUD потоков
-
-- [ ] `POST /streams` — создание нового потока
-  - Валидация входных данных
-  - Запись конфигурации в store
-  - Отправка `POST /v3/config/paths/add/{name}` в MediaMTX Control API
-    (динамическое добавление пути без перезагрузки)
-- [ ] `GET /streams/config` — список всех сконфигурированных потоков (не только
-  активных)
-- [ ] `GET /streams/config/{path}` — детали конфигурации конкретного потока
-- [ ] `PATCH /streams/config/{path}` — обновление параметров (record_enabled,
-  credentials, source)
-  - Отправка `PATCH /v3/config/paths/edit/{name}` в MediaMTX
-- [ ] `DELETE /streams/config/{path}` — удаление потока
-  - Отправка `DELETE /v3/config/paths/delete/{name}` в MediaMTX
-  - Опционально: удаление связанных записей из `./recordings/{path}/`
-- [ ] Все endpoints защищены JWT (`Depends(get_current_user)`)
-
-#### 3.1.3. Индивидуальные настройки per-path
-
-- [ ] Поддержка параметров в `mediamtx.yml` (и Jinja2-шаблоне):
-  - `record: yes/no` — запись для конкретного потока
-  - `source: publisher | rtsp://camera-url` — источник
-  - `publishUser`, `publishPass` — аутентификация публикации
-  - `readUser`, `readPass` — аутентификация чтения
-  - `publishIPs`, `readIPs` — IP- whitelist
-- [ ] Генерация credentials: случайные пароли через `secrets.token_urlsafe()`
-  или хеширование `sha256` с `openssl`
-- [ ] Обновление `pathDefaults` для дефолтных настроек (record, segmentDuration)
-
-#### 3.1.4. Frontend — UI управления потоками
-
-- [ ] Новая страница `/streams` (или модальное окно в существующем layout)
-- [ ] Таблица потоков со столбцами:
-  - Name, Source, Status (ready/not ready), Readers count, Record enabled
-  - Кнопки: **Edit**, **Delete**, **View details**
-- [ ] Форма создания/редактирования потока:
-  - Поля: Name, Source type (publisher / camera URL), Record toggle,
-    Publish/Read credentials (auto-generated или custom)
-- [ ] Интеграция с API клиентом (`streamsApi.create()`, `update()`, `delete()`)
+- [x] Составить карту всех in-memory структур данных в проекте:
+  - `app/services/auth_service.py`: `_users`, `_refresh_tokens`,
+    `_token_blacklist`, `_failed_attempts`.
+  - `app/core/security_logging.py`: `_responses` (подозрительная активность).
+  - `app/core/rate_limit.py`: `MemoryStorage` через `slowapi`/`limits`.
+- [x] Зафиксировать для каждой структуры:
+  - ключи/сущности,
+  - сроки жизни данных,
+  - требования к консистентности и атомарности,
+  - частоту чтения/записи.
+- [x] Определить, какие данные идут в PostgreSQL, а какие (при необходимости)
+  могут остаться во внешнем хранилище (Redis/Memcached) для rate-limiting.
+- [x] Зафиксировать результаты аудита в виде краткой сводки в комментарии к
+  первому коммиту этапа или в рабочей заметке `plan/PLAN.md` (раздел
+  "Артефакты аудита").
 
 ---
 
-### 3.2. Шифрование потоков на MediaMTX
+## 2. Подготовка инфраструктуры и конфигурации
 
-#### 3.2.1. RTSPS (RTSP over TLS)
-
-- [ ] Исследовать поддержку RTSPS в `bluenviron/mediamtx:1.15.1-ffmpeg`
-  - Параметры `encryption`, `rtspsAddress`, `serverKey`, `serverCert`
-  - Режимы: `no` / `optional` / `strict`
-- [ ] Сгенерировать self-signed сертификат для локальной разработки:
-  ```bash
-  openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt \
-    -days 365 -nodes -subj "/CN=localhost"
-  ```
-- [ ] Обновить `mediamtx.yml`:
-  ```yaml
-  rtsp: yes
-  encryption: optional          # или strict
-  rtspAddress: :8554            # plain RTSP
-  rtspsAddress: :8322           # RTSP over TLS
-  serverKey: /certs/server.key
-  serverCert: /certs/server.crt
-  ```
-- [ ] Обновить `docker-compose.yml`:
-  - Проброс RTSPS-порта `${TACITUS_MTX_RTSPS_PORT:-8322}`
-  - Volume `./certs:/certs:ro`
-- [ ] Обновить `ansible/roles/mediamtx`: копирование сертификатов на хост,
-  настройка прав `600` на private key
-- [ ] Обновить `mediamtx.yml.j2`: условная генерация RTSPS-блока
-- [ ] Тестирование:
-  ```bash
-  ffmpeg -re -f lavfi -i testsrc -c:v libx264 -f rtsp \
-    rtsps://localhost:8322/secure-live
-  ```
-
-#### 3.2.2. Аутентификация публикации и чтения (per-path)
-
-- [ ] Настроить `publishUser` / `publishPass` в `pathDefaults` или per-path
-- [ ] Настроить `readUser` / `readPass`
-- [ ] Поддержка **sha256-хешированных** паролей (безопаснее plain text):
-  ```bash
-  echo -n "password" | openssl dgst -binary -sha256 | openssl base64
-  # → sha256:BASE64_HASH
-  ```
-- [ ] Генерация credentials в FastAPI при создании потока
-- [ ] Хранение credentials: **не в plain text в репозитории**
-  - Локально: через `.env` или runtime-генерация
-  - Production: Vault / Ansible Vault / AWS Secrets Manager (подготовка)
-- [ ] Проверка отказа при неверных credentials:
-  ```bash
-  ffplay rtsp://wrong:user@localhost:8554/cam1   # → 401 Unauthorized
-  ```
-
-#### 3.2.3. Шифрование записей (encryption at rest)
-
-- [ ] Исследовать встроенное шифрование записей MediaMTX (вероятно,
-  отсутствует в v1.15.1)
-- [ ] **Альтернатива A — шифрование на уровне файловой системы:**
-  - LUKS для директории `./recordings` (требует privileged container)
-  - eCryptfs / fscrypt (userspace encryption)
-  - Сложность: Docker volume + non-root user
-- [ ] **Альтернатива B — шифрование при выгрузке в S3:**
-  - `scripts/mediamtx-archive-manager.py`: шифрование файла перед
-    `put_object()` через `cryptography.fernet`
-  - Хранение ключа шифрования в `TACITUS_ARCHIVE_ENCRYPTION_KEY`
-  - S3 Server-Side Encryption (SSE-S3 / SSE-KMS) через boto3
-    `ServerSideEncryption='AES256'`
-- [ ] **Альтернатива C — шифрование целевой директории хоста:**
-  - Encrypted bind-mount на уровне хоста (Linux: dm-crypt/LUKS)
-  - Не требует изменений в приложении
-- [ ] Выбрать и реализовать **один** подход для MVP
-- [ ] Обновить `archive-manager`: опциональное шифрование перед upload
-
-#### 3.2.4. Интеграция TLS с Nginx и Docker
-
-- [ ] Использование **общих сертификатов** с Nginx (Let's Encrypt):
-  - Volume `/etc/letsencrypt:/certs:ro` в `mediamtx`
-  - Симлинк или копирование `fullchain.pem` → `server.crt`,
-    `privkey.pem` → `server.key`
-- [ ] Ansible: автоматическое обновление сертификатов через cron + reload
-  MediaMTX (SIGHUP или `docker compose restart mediamtx`)
-- [ ] Поддержка **mtls** (mutual TLS) для RTSPS — исследовать необходимость
+- [x] Добавить переменные окружения для PostgreSQL в `.env.example`:
+  - `TACITUS_DATABASE_URL` (или раздельные `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+    `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`).
+  - Дополнительно добавлена `TACITUS_RATE_LIMIT_STORAGE_URI` с разъяснением
+    возможных backend'ов.
+- [x] Проверить `docker-compose.yml`:
+  - сервис `postgres` уже присутствует и использует healthcheck,
+  - сервис `db-migrations` запускает `alembic upgrade head`,
+  - сервис `app` дожидается миграций.
+- [x] Убедиться, что `app/core/config.py` корректно читает `database_url` и
+  формирует URL при использовании отдельных переменных.
+  - Добавлено поле `rate_limit_storage_uri` с дефолтом `memory`.
+- [x] Проверить актуальность `pyproject.toml` и при необходимости обновить
+  `requirements.txt` (должны присутствовать `sqlalchemy[asyncio]`, `asyncpg`,
+  `alembic`, а также `limits`/`slowapi` с нужным storage backend).
+  - `requirements.txt` перегенерирован через `pip-compile`; теперь включает
+    `alembic`, `asyncpg`, `sqlalchemy`, `slowapi`, `limits`.
+- [x] Добавить в `docker-compose.yml` для сервиса `app` переменные
+  `TACITUS_DATABASE_URL` / `POSTGRES_*`, если они там ещё не прописаны.
+  - В environment сервиса `app` добавлены `TACITUS_DATABASE_URL` и
+    `TACITUS_RATE_LIMIT_STORAGE_URI`.
 
 ---
 
-### 3.3. Инфраструктура и деплой
+## 3. Проектирование схемы базы данных
 
-#### 3.3.1. Docker Compose
-
-- [ ] Добавить в `docker-compose.yml`:
-  - RTSPS-порт: `${TACITUS_MTX_RTSPS_PORT:-8322}:${TACITUS_MTX_RTSPS_PORT:-8322}`
-  - Volume для сертификатов: `./certs:/certs:ro` (или shared volume с nginx)
-  - Переменная `MTX_ENCRYPTION`
-  - Сервис `postgres:18-alpine` с volume `postgres-data`
-  - Сервис `app` зависит от `postgres` (`depends_on` + `condition: service_healthy`)
-  - Init-контейнер `db-migrations` для `alembic upgrade head`
-- [ ] Обновить healthcheck: проверка и RTSP, и RTSPS портов (опционально)
-- [ ] Обновить `mediamtx-cleanup`: поддержка `TACITUS_ARCHIVE_ENCRYPTION_KEY`
-
-#### 3.3.2. Ansible
-
-- [ ] Обновить `ansible/roles/mediamtx/tasks/main.yml`:
-  - Создание директории `./certs` с правами `700`
-  - Копирование сертификатов (self-signed или Let's Encrypt)
-- [ ] Обновить `ansible/roles/mediamtx/templates/mediamtx.yml.j2`:
-  - Условный блок RTSPS (`{% if mediamtx_encryption != 'no' %}`)
-  - Цикл по `mediamtx_paths` с per-path credentials
-- [ ] Обновить `ansible/group_vars/all.yml`:
-  - `mediamtx_encryption: optional`
-  - `mediamtx_rtsps_port: 8322`
-  - `mediamtx_tls_cert_path: /opt/tacitus/certs/server.crt`
-  - `mediamtx_tls_key_path: /opt/tacitus/certs/server.key`
-  - `mediamtx_enable_auth: true`
-- [ ] Pre-checks: проверка, что RTSPS-порт свободен
-- [ ] Post-checks: проверка RTSPS handshake (`openssl s_client`)
-
-#### 3.3.3. Переменные окружения
-
-| Переменная                          | Default         | Описание                              |
-|-------------------------------------|-----------------|---------------------------------------|
-| `TACITUS_MTX_ENCRYPTION`            | `no`            | Режим RTSPS: `no` / `optional` / `strict` |
-| `TACITUS_MTX_RTSPS_PORT`            | `8322`          | Порт RTSPS (RTSP over TLS)            |
-| `TACITUS_MTX_TLS_CERT_PATH`         | `/certs/server.crt` | Путь к TLS-сертификату в контейнере |
-| `TACITUS_MTX_TLS_KEY_PATH`          | `/certs/server.key` | Путь к TLS-ключу в контейнере       |
-| `TACITUS_MTX_ENABLE_PER_PATH_AUTH`  | `true`          | Включить publish/read credentials     |
-| `TACITUS_ARCHIVE_ENCRYPTION_KEY`    | —               | Ключ Fernet для шифрования архивов    |
-| `TACITUS_DATABASE_URL`              | `postgresql+asyncpg://postgres:postgres@postgres:5432/tacitus` | URL подключения к PostgreSQL |
-
-#### 3.3.4. PostgreSQL
-
-- [ ] Добавить сервис `postgres` в `docker-compose.yml`:
-  - Образ `postgres:18-alpine` (pinned)
-  - Volume `postgres-data:/var/lib/postgresql/data`
-  - Переменные: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
-  - Healthcheck: `pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}`
-- [ ] Добавить init-контейнер `db-migrations`:
-  - Образ на базе `tacitus-app`
-  - Команда: `alembic upgrade head`
-  - Зависимость от `postgres` (condition: service_healthy)
-- [ ] Обновить `app/core/config.py`:
-  - `database_url: str` с дефолтом `postgresql+asyncpg://postgres:postgres@postgres:5432/tacitus`
-- [ ] Создать `app/db/engine.py`:
-  - `create_async_engine()` с `TACITUS_DATABASE_URL`
-  - `AsyncSessionLocal` через `async_sessionmaker`
-- [ ] Обновить `ansible/roles/app_deploy`:
-  - Добавить сервис `postgres` в шаблон `docker-compose.yml`
-  - Настроить `POSTGRES_PASSWORD` через `.env.j2`
-  - Backup-задача перед миграциями (опционально)
+- [ ] Определить набор таблиц, необходимых для замены in-memory хранилищ:
+  - `users` — учётные записи и хеши паролей.
+  - `refresh_tokens` — выпущенные refresh-токены с TTL и привязкой к пользователю.
+  - `revoked_tokens` — отозванные access-токены (blacklist) до истечения TTL.
+  - `failed_login_attempts` — неудачные попытки входа для защиты от brute-force.
+  - `security_events` — подозрительная активность и прочие security-события.
+- [ ] Спроектировать индексы:
+  - уникальный индекс на `users.username`,
+  - индекс на `refresh_tokens.token_hash` (или `jti`),
+  - индекс на `revoked_tokens.jti` с частичным/уникальным ограничением,
+  - индекс на `failed_login_attempts.username` + `created_at`,
+  - индекс на `security_events.ip_address` + `created_at`.
+- [ ] Зафиксировать схему в документе `docs/backend.md` (раздел
+  "Схема базы данных").
 
 ---
 
-### 3.4. Тестирование
+## 4. Реализация SQLAlchemy моделей
 
-#### 3.4.1. Unit / integration tests
-
-- [ ] Тесты CRUD API потоков (`test_streams_crud.py`):
-  - Создание, обновление, удаление потока
-  - Валидация дублирующего имени
-  - Проверка JWT-защиты
-- [ ] Тесты аутентификации потоков:
-  - Публикация с верными credentials → успех
-  - Публикация с неверными credentials → 401
-  - Чтение с верными credentials → успех
-- [ ] Тесты archive-manager с шифрованием:
-  - Шифрование файла перед upload
-  - Расшифровка и проверка целостности
-  - No-op если ключ шифрования не задан
-
-#### 3.4.2. End-to-end тестирование
-
-- [ ] FFmpeg публикует поток с `publishUser:publishPass`:
-  ```bash
-  ffmpeg -re -f lavfi -i testsrc -c:v libx264 \
-    -f rtsp rtsp://publisher:pass@localhost:8554/cam-auth
-  ```
-- [ ] FFmpeg публикует поток через **RTSPS**:
-  ```bash
-  ffmpeg -re -f lavfi -i testsrc -c:v libx264 \
-    -f rtsp rtsps://localhost:8322/secure-live
-  ```
-- [ ] Проверка отказа при неверных RTSPS-сертификатах (strict mode)
-- [ ] Проверка шифрования архивов: скачать из S3, расшифровать, сравнить с
-  оригиналом
+- [ ] В `app/db/models.py` реализовать модели:
+  - `User` с полями `id`, `username`, `password_hash`, `is_active`,
+    `created_at`, `updated_at`.
+  - `RefreshToken` с полями `id`, `user_id`, `token_hash`/`jti`, `expires_at`,
+    `created_at`, `revoked_at`.
+  - `RevokedToken` с полями `id`, `jti`, `expires_at`, `revoked_at`.
+  - `FailedLoginAttempt` с полями `id`, `username`, `ip_address`, `created_at`.
+  - `SecurityEvent` с полями `id`, `event_type`, `ip_address`, `username`,
+    `details`, `created_at`.
+- [ ] Убедиться, что все модели наследуются от общего `Base` и корректно
+  регистрируются в метаданных.
+- [ ] Добавить типизацию колонок, ограничения (`nullable`, `unique`) и
+  внешние ключи с `ON DELETE`.
+- [ ] Добавить к каждой модели и каждому полю docstring/комментарий на русском
+  языке, поясняющий назначение.
+- [ ] Проверить, что существующая модель `Stream` не нарушена и остаётся
+  работоспособной.
 
 ---
 
-### 3.5. Документация
+## 5. Создание репозиториев для работы с БД
 
-- [ ] Обновить `docs/backend.md`:
-  - Раздел «Управление потоками» (CRUD API, схемы)
-  - Раздел «Аутентификация потоков» (publish/read credentials)
-- [ ] Обновить `docs/infrastructure.md`:
-  - RTSPS-порт, TLS-сертификаты
-  - Шифрование архивов (at rest)
-- [ ] Обновить `docs/deployment.md`:
-  - Переменные `mediamtx_encryption`, `mediamtx_rtsps_port`
-  - Раздел «SSL-сертификаты для MediaMTX»
-- [ ] Обновить `README.md`:
-  - Endpoints `/streams/config/*`
-  - Переменные `TACITUS_MTX_ENCRYPTION`, `TACITUS_ARCHIVE_ENCRYPTION_KEY`
-
----
-
-## 4. Технологический стек
-
-| Слой            | Технология              | Версия / Требование                    |
-|-----------------|-------------------------|----------------------------------------|
-| Media Server    | MediaMTX                | `bluenviron/mediamtx:1.15.1-ffmpeg`    |
-| Streaming       | RTSP / RTSPS            | TCP + TLS (optional/strict)            |
-| Auth            | HTTP Basic (per-path)   | `publishUser` / `readUser`             |
-| Encryption      | TLS 1.2+, Fernet        | OpenSSL, `cryptography`                |
-| Database        | PostgreSQL 16           | `asyncpg`, SQLAlchemy 2.0, Alembic     |
-| Storage         | MinIO / S3              | SSE-S3 / SSE-KMS (опционально)         |
-| Test            | pytest, ffmpeg, openssl | `openssl s_client` для RTSPS probe     |
+- [ ] В `app/db/repositories/` создать (или расширить) репозитории:
+  - `UserRepository` — CRUD и поиск пользователя по username.
+  - `RefreshTokenRepository` — создание, поиск, отзыв, очистка протухших.
+  - `TokenBlacklistRepository` — добавление JTI в blacklist, проверка наличия.
+  - `FailedLoginAttemptRepository` — запись попытки, подсчёт за окно,
+    очистка старых записей.
+  - `SecurityEventRepository` — запись события, подсчёт за окно, очистка.
+- [ ] Использовать протоколы (typing.Protocol) или абстрактные базовые классы
+  для репозиториев, чтобы упростить будущее unit-тестирование.
+- [ ] Каждый метод репозитория должен:
+  - принимать `AsyncSession`,
+  - выполнять один запрос и возвращать результат,
+  - содержать docstring с описанием аргументов, возвращаемого значения и
+    возможных исключений.
+- [ ] Добавить обработку `IntegrityError` и преобразование её в понятные
+  бизнес-исключения.
 
 ---
 
-## 5. Требования
+## 6. Миграции Alembic
 
-### Функциональные (FR)
-
-- **FR-001**: Пользователь может создать поток через `POST /streams/config` с
-  указанием name, source, record_enabled.
-- **FR-002**: Пользователь может обновить параметры потока
-  (`PATCH /streams/config/{path}`) без перезапуска MediaMTX.
-- **FR-003**: Пользователь может удалить поток; связанные записи удаляются
-  опционально.
-- **FR-004**: Каждый поток имеет уникальные `publishUser` / `publishPass`.
-- **FR-005**: RTSPS доступен на настраиваемом порту (default `8322`).
-- **FR-006**: Шифрование записей перед выгрузкой в S3 включено через env var.
-- **FR-007**: Конфигурации потоков хранятся в PostgreSQL и переживают
-  перезапуск контейнеров.
-
-### Нефункциональные (NFR)
-
-- **NFR-001**: Credentials не хранятся в plain text в репозитории.
-- **NFR-002**: RTSPS-сертификаты ротируются без downtime (SIGHUP или
-  graceful restart).
-- **NFR-003**: Количество потоков не ограничено жёстко (лимит — ресурсы
-  сервера).
-- **NFR-004**: Повторный запуск Ansible не пересоздаёт сертификаты, если они
-  валидны.
-- **NFR-005**: PostgreSQL-данные сохраняются между перезапусками через Docker
-  volume (`postgres-data`).
+- [ ] Сгенерировать новую миграцию командой `alembic revision --autogenerate -m
+  "add auth and security tables"`.
+- [ ] Вручную проверить сгенерированный скрипт миграции:
+  - корректность типов колонок,
+  - наличие необходимых индексов,
+  - корректность `upgrade()` и `downgrade()`.
+- [ ] Протестировать миграцию в чистом окружении:
+  - `alembic upgrade head`,
+  - `alembic downgrade -1`,
+  - повторный `alembic upgrade head`.
+- [ ] Добавить комментарии внутри файла миграции, поясняющие назначение каждой
+  таблицы и индекса.
+- [ ] Задокументировать команду для применения миграций в `docs/deployment.md`.
 
 ---
 
-## 6. Риски и митигация
+## 7. Рефакторинг `app/services/auth_service.py`
 
-| Риск                                  | Митигация                                               |
-|---------------------------------------|---------------------------------------------------------|
-| MediaMTX v1.15.1 не поддерживает динамическое изменение `paths` без reload | Использовать Control API (`/v3/config/paths/add/...`) или fallback на reload |
-| RTSPS требует TCP; UDP-RTP остаётся нешифрованным | Документировать: RTSPS шифрует только control plane; для media plane нужен SRTP (MediaMTX не поддерживает) |
-| Self-signed certs вызывают warnings в FFmpeg/ffplay | Документировать `--no-check-certificate` для тестов; production — Let's Encrypt |
-| Шифрование архивов увеличивает CPU load cleanup-сервиса | Тестировать производительность; Fernet — быстрый (AES-128-CBC) |
-| Per-path credentials усложняют Jinja2-шаблон | Использовать Ansible `loop` + `dict` для `mediamtx_paths` |
-| Добавление PostgreSQL усложняет локальный старт | `docker-compose.yml` поднимает Postgres автоматически; dev-defaults через `.env` |
+- [ ] Удалить (или заменить) модульные переменные:
+  - `_users` → `UserRepository`,
+  - `_refresh_tokens` → `RefreshTokenRepository`,
+  - `_token_blacklist` → `TokenBlacklistRepository`,
+  - `_failed_attempts` → `FailedLoginAttemptRepository`.
+- [ ] Переписать функции так, чтобы они принимали `AsyncSession` (через
+  `Depends(get_db_session)` на уровне router/dependencies или явно в сервисе).
+- [ ] Сохранить существующую бизнес-логику:
+  - регистрация пользователя с хешированием пароля,
+  - логин с проверкой пароля,
+  - brute-force защита (5 неудачных попыток в 15 минут),
+  - генерация access/refresh токенов,
+  - отзыв токенов и проверка blacklist,
+  - обновление access-токена по refresh-токену.
+- [ ] Добавить периодическую очистку протухших refresh-токенов и старых записей
+  `failed_login_attempts` (например, при каждой записи или отдельным
+  фоновым/периодическим вызовом).
+- [ ] Добавить обработку ошибок БД (`IntegrityError`, `DBAPIError`) и
+  преобразование их в `AppError`.
+- [ ] Покрыть все публичные функции docstring и комментариями.
 
 ---
 
-## 7. Критерии завершения (Definition of Done)
+## 8. Рефакторинг `app/core/security_logging.py`
 
-- [ ] `POST /streams/config` создаёт поток; MediaMTX начинает принимать публикацию
-  на новом path.
-- [ ] `DELETE /streams/config/{path}` удаляет поток из MediaMTX.
-- [ ] FFmpeg публикует поток с аутентификацией (`publishUser:publishPass`).
-- [ ] FFmpeg публикует поток через RTSPS (`rtsps://host:8322/...`).
-- [ ] Неверные credentials отклоняются MediaMTX (401).
-- [ ] Архивный сегмент шифруется перед загрузкой в S3 и успешно
-  расшифровывается.
-- [ ] Ansible деплоит MediaMTX с RTSPS и per-path auth без ошибок.
-- [ ] PostgreSQL поднимается в Docker Compose, миграции применяются
-  автоматически (init-контейнер или `alembic upgrade head` в entrypoint).
-- [ ] `ruff check .` и `pytest tests/` проходят без ошибок.
-- [ ] Документация (`docs/`, `README.md`) обновлена.
+- [ ] Заменить классовый словарь `_responses` на `SecurityEventRepository`.
+- [ ] При получении ответа 401/403 записывать событие в БД вместо накопления в
+  памяти.
+- [ ] Реализовать логику детекции подозрительной активности через SQL-запрос:
+  подсчёт событий за заданное окно (5 минут) для IP-адреса.
+- [ ] Добавить фоновую/периодическую очистку старых security-событий,
+  чтобы таблица не росла неограниченно.
+- [ ] Добавить docstring к middleware и вспомогательным методам.
+- [ ] Обновить `docs/security.md` с описанием нового механизма.
+
+---
+
+## 9. Рефакторинг `app/core/rate_limit.py`
+
+- [ ] Выбрать backend для `slowapi`/`limits`:
+  - вариант A: PostgreSQL-адаптер (`limits` поддерживает различные storage),
+  - вариант B: Redis (если в стеке планируется Redis).
+- [ ] Настроить `storage_uri` через переменные окружения
+  (`TACITUS_RATE_LIMIT_STORAGE_URI`).
+  - Для PostgreSQL: `postgresql+asyncpg://...` или синхронный вариант,
+    совместимый с `limits`.
+  - Для Redis: `redis://host:port`.
+- [ ] Обновить инициализацию `Limiter`:
+  - передать `storage_uri` и `storage_options` если требуется,
+  - сохранить текущую функцию `get_client_ip` как key_func.
+- [ ] Убедиться, что rate-limit работает корректно при перезапуске приложения и
+  при нескольких инстансах (данные хранятся вне процесса).
+- [ ] Обновить тесты, убрав прямой вызов `limiter.reset()` как способ очистки
+  состояния; вместо этого использовать очистку выбранного backend.
+- [ ] Добавить комментарии, поясняющие выбор backend и URL хранилища.
+
+---
+
+## 10. Обновление API слоя
+
+- [ ] В `app/api/dependencies.py` убедиться, что `get_current_user` получает
+  `AsyncSession` и передаёт её в `auth_service`.
+- [ ] Обновить `app/api/routers/auth.py`:
+  - все endpoint'ы используют `Depends(get_db_session)`,
+  - вызовы `auth_service` содержат сессию.
+- [ ] Проверить остальные роутеры (`files.py`, `streams.py`, `hello.py`) на
+  предмет неявного использования auth-зависимостей; при необходимости обновить
+  вызовы.
+- [ ] Добавить обработку новых исключений БД на уровне middleware/exception
+  handlers (`app/core/exceptions.py`).
+- [ ] Добавить docstring к endpoint'ам и обработчикам.
+
+---
+
+## 11. Обновление тестов
+
+- [ ] В `tests/conftest.py` заменить ручную очистку in-memory словарей на
+  фикстуры для работы с БД:
+  - фикстура `async_engine`, создающая тестовое подключение,
+  - фикстура `db_session`, открывающая транзакцию и откатывающая её после
+    теста,
+  - фикстура `client`, переопределяющая `get_db_session` для тестов.
+- [ ] Убрать прямой доступ к `auth_service._users`, `_refresh_tokens`,
+  `_token_blacklist`, `_failed_attempts` в тестах.
+- [ ] Обновить `tests/test_auth.py`: использовать репозитории или API для
+  подготовки состояния.
+- [ ] Обновить `tests/test_rate_limit.py` и `tests/test_logging.py` для работы
+  с новыми хранилищами.
+- [ ] Добавить unit-тесты для новых репозиториев (CRUD, уникальность,
+  очистка старых записей).
+- [ ] Добавить интеграционный тест миграций `alembic upgrade head` / `downgrade`
+  на тестовой БД.
+- [ ] Покрыть комментариями сложные фрагменты тестовой инфраструктуры.
+
+---
+
+## 12. Обновление документации
+
+- [ ] `docs/backend.md`:
+  - обновить раздел "Аутентификация" (убрать упоминание in-memory),
+  - добавить раздел "Схема базы данных" с описанием таблиц и связей,
+  - добавить раздел "Репозитории" с описанием слоя доступа к данным,
+  - обновить таблицу переменных окружения (добавить `DATABASE_URL` и
+    `RATE_LIMIT_STORAGE_URI`).
+- [ ] `docs/security.md`:
+  - обновить описание хранения паролей и токенов,
+  - обновить механизм brute-force защиты,
+  - обновить логику подозрительной активности,
+  - обновить rate-limiting.
+- [ ] `docs/deployment.md`:
+  - добавить инструкции по настройке PostgreSQL,
+  - описать применение миграций (`alembic upgrade head`),
+  - добавить рекомендации по резервному копированию БД,
+  - обновить переменные окружения.
+- [ ] `.env.example`:
+  - добавить `TACITUS_DATABASE_URL`,
+  - добавить `TACITUS_RATE_LIMIT_STORAGE_URI` (если выбран отдельный backend),
+  - добавить комментарии к новым переменным.
+- [ ] `plan/DECISIONS.md`:
+  - добавить ADR-010 "Переход на PostgreSQL для хранения состояния приложения"
+    или обновить ADR-006, отметив его как "Заменено ADR-010".
+- [ ] `README.md` (если есть ссылки на in-memory хранилище):
+  - обновить общее описание архитектуры и стека.
+
+---
+
+## 13. Финальное тестирование и приёмка
+
+- [ ] Локально поднять стек `docker compose up -d --build` и убедиться, что все
+  сервисы стартуют без ошибок.
+- [ ] Проверить применение миграций: контейнер `db-migrations` завершается со
+  статусом `0`.
+- [ ] Запустить полный набор тестов: `pytest`.
+- [ ] Проверить основной сценарий аутентификации:
+  - регистрация,
+  - логин,
+  - доступ к защищённым endpoint'ам,
+  - logout / revoke token,
+  - refresh token flow.
+- [ ] Проверить brute-force защиту: 5 неудачных попыток блокируют вход на
+  15 минут.
+- [ ] Проверить rate limiting: лимиты сохраняются после перезапуска сервиса
+  `app`.
+- [ ] Проверить security logging: множественные 401/403 от одного IP
+  фиксируются в БД и инициируют предупреждение.
+- [ ] Проверить работу миграций с нуля:
+  - удалить volume `postgres-data`,
+  - запустить `docker compose up -d`,
+  - убедиться, что все таблицы созданы.
+- [ ] Проверить `alembic downgrade -1` и повторный `alembic upgrade head` на
+  тестовой БД.
+
+---
+
+## 14. Код-ревью и финальная полировка
+
+- [ ] Убедиться, что все in-memory переменные удалены или закомментированы как
+  deprecated.
+- [ ] Проверить консистентность именования: модели, репозитории, таблицы,
+  endpoint'ы используют единый стиль.
+- [ ] Проверить, что каждый публичный класс/функция/метод имеет docstring.
+- [ ] Проверить, что сложные алгоритмические участки имеют inline-комментарии.
+- [ ] Запустить линтер/форматёр (`ruff check .`, `ruff format --check .`) и
+  исправить замечания.
+- [ ] Проверить типизацию (`mypy` / `pyright` если используется).
+- [ ] Сделать финальный коммит с кратким, но информативным сообщением.
+
+---
+
+## Артефакты аудита (пункт 1)
+
+### 1.1 Перечень in-memory хранилищ
+
+| Файл | Переменная/объект | Тип | Назначение |
+|------|-------------------|-----|------------|
+| `app/services/auth_service.py:19` | `_users` | `dict[str, dict[str, Any]]` | Реестр пользователей: `username` → `{username, hashed_password}`. |
+| `app/services/auth_service.py:23` | `_failed_attempts` | `dict[str, list[datetime]]` | Счётчик неудачных входов по `username` для brute-force защиты. |
+| `app/services/auth_service.py:29` | `_token_blacklist` | `set[str]` | Множество отозванных access-токенов. |
+| `app/services/auth_service.py:33` | `_refresh_tokens` | `dict[str, dict[str, Any]]` | Хранилище refresh-токенов: `token` → `{sub, exp}`. |
+| `app/core/security_logging.py:51` | `SuspiciousActivityMiddleware._responses` | `dict[str, list[datetime]]` | Накопление 401/403 ответов по IP для детекции атак. |
+| `app/core/rate_limit.py:26` | `limiter` | `slowapi.Limiter` | Rate limiting; по умолчанию использует `MemoryStorage`. |
+| `tests/conftest.py:23-27` | `reset_global_state` | fixture | Сбрасывает все in-memory хранилища между тестами. |
+
+### 1.2 Контракты и требования
+
+#### `_users`
+- **Ключ:** `username` (регистрозависимый, уникальный).
+- **Значение:** `{"username": str, "hashed_password": str}`.
+- **Операции:** чтение при логине/аутентификации; запись при регистрации.
+- **Консистентность:** требуется уникальность username; операции регистрации
+  должны быть атомарными.
+- **Срок жизни:** перманентный (до удаления пользователя).
+- **Миграция:** таблица `users` в PostgreSQL.
+
+#### `_failed_attempts`
+- **Ключ:** `username`.
+- **Значение:** список `datetime` неудачных попыток входа.
+- **Логика:** `is_brute_force_locked()` считает попытки за окно
+  `BRUTE_FORCE_WINDOW_MINUTES = 15`; блокировка наступает при
+  `BRUTE_FORCE_MAX_ATTEMPTS = 5`.
+- **Операции:** запись при неудачном логине; чтение при каждой попытке логина
+  для проверки блокировки.
+- **Срок жизни:** 15 минут (фактически обрезается при каждом чтении).
+- **Миграция:** таблица `failed_login_attempts` в PostgreSQL; рекомендуется
+  периодическая очистка записей старше 15 минут.
+
+#### `_token_blacklist`
+- **Элемент:** строка access-токена целиком.
+- **Операции:** запись при logout; чтение при каждой валидации токена.
+- **Срок жизни:** до истечения TTL access-токена (по умолчанию 15 минут).
+- **Консистентность:** идемпотентность добавления; проверка наличия.
+- **Миграция:** таблица `revoked_tokens` с индексом по `jti` (предпочтительно
+  хранить `jti` вместо полного токена). Требуется миграция логики logout на
+  использование `jti` из payload.
+
+#### `_refresh_tokens`
+- **Ключ:** строка refresh-токена.
+- **Значение:** `{"sub": username, "exp": datetime}`.
+- **Операции:** запись при выпуске; чтение при refresh; удаление при logout.
+- **Срок жизни:** `jwt_refresh_expiration_days` (по умолчанию 7 дней).
+- **Консистентность:** одноразовость желательна, но в MVP не реализована;
+  при миграции рекомендуется добавить флаг `used_at` или `revoked_at`.
+- **Миграция:** таблица `refresh_tokens` с внешним ключом на `users`.
+
+#### `SuspiciousActivityMiddleware._responses`
+- **Ключ:** IP-адрес клиента.
+- **Значение:** список `datetime` 401/403 ответов.
+- **Логика:** окно 5 минут, порог 100 событий; при превышении логируется
+  `security.suspicious_activity`.
+- **Операции:** запись при каждом ответе 401/403; чтение/обрезка при записи.
+- **Срок жизни:** 5 минут.
+- **Миграция:** таблица `security_events` с типом события; детекция через
+  SQL-запрос `COUNT(*) WHERE ip = ? AND created_at > now() - interval '5 min'`.
+
+#### `limiter` (rate limiting)
+- **Backend:** `limits.storage.MemoryStorage` по умолчанию.
+- **Ключ:** клиентский IP (текущая конфигурация `key_func=get_client_ip`).
+- **Операции:** инкремент счётчика при каждом запросе; проверка лимита.
+- **Срок жизни:** зависит от декораторов/конфигурации лимитов.
+- **Миграция:** внешнее хранилище, совместимое с `limits`:
+  - **Вариант A:** Redis (`redis://...`) — предпочтителен для rate limiting.
+  - **Вариант B:** PostgreSQL через `limits` storage URI (если Redis недоступен).
+  - Рекомендуется вынести в переменную окружения
+    `TACITUS_RATE_LIMIT_STORAGE_URI`.
+
+### 1.3 Решение по гранулярности миграции
+
+| In-memory структура | Целевое хранилище | Таблица/ключ | Примечание |
+|---------------------|-------------------|--------------|------------|
+| `_users` | PostgreSQL | `users` | Полная миграция; уникальность username. |
+| `_failed_attempts` | PostgreSQL | `failed_login_attempts` | Очистка старше 15 минут. |
+| `_token_blacklist` | PostgreSQL | `revoked_tokens` | Хранить `jti`, не полный токен. |
+| `_refresh_tokens` | PostgreSQL | `refresh_tokens` | Добавить `revoked_at`/`used_at`. |
+| `_responses` | PostgreSQL | `security_events` | Тип события `suspicious_activity`. |
+| `limiter` | Redis / PostgreSQL | `TACITUS_RATE_LIMIT_STORAGE_URI` | Зависит от инфраструктуры. |
+
+---
+
+## Артефакты, которые должны появиться после выполнения плана
+
+1. Новые/изменённые SQLAlchemy модели в `app/db/models.py`.
+2. Новые репозитории в `app/db/repositories/`.
+3. Миграция(и) Alembic в `migrations/versions/`.
+4. Обновлённые `app/services/auth_service.py`,
+   `app/core/security_logging.py`, `app/core/rate_limit.py`.
+5. Обновлённые роутеры и зависимости в `app/api/`.
+6. Обновлённые тесты в `tests/`.
+7. Обновлённая документация `docs/*.md`, `.env.example`,
+   `plan/DECISIONS.md`.
+
+---
+
+*План создан на основании `plan/PLAN_INIT.md`. При выполнении отмечайте каждый
+пункт галочкой `[x]`.*
