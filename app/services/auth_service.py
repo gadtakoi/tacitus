@@ -1,40 +1,45 @@
-"""Authentication and authorization service."""
+"""Authentication and authorization service.
 
+This module contains the business logic for user registration, login,
+brute-force protection, JWT lifecycle and token revocation. All persistent
+state is stored in PostgreSQL through the repository layer.
+"""
+
+from __future__ import annotations
+
+import hashlib
 import logging
-import threading
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import AppError
 from app.core.security_logging import log_security_event
+from app.db.repositories.auth import (
+    AuthRepositoryError,
+    FailedLoginAttemptRepository,
+    RefreshTokenRepository,
+    TokenBlacklistRepository,
+    UserRepository,
+)
 
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-# In-memory user storage for MVP
-_users: dict[str, dict[str, Any]] = {}
-
-# Brute-force protection
-_brute_lock = threading.Lock()
-_failed_attempts: dict[str, list[datetime]] = {}
+# Brute-force protection constants.
 BRUTE_FORCE_WINDOW_MINUTES = 15
 BRUTE_FORCE_MAX_ATTEMPTS = 5
 
-# Token blacklist
-_blacklist_lock = threading.Lock()
-_token_blacklist: set[str] = set()
-
-# Refresh token storage
-_refresh_lock = threading.Lock()
-_refresh_tokens: dict[str, dict[str, Any]] = {}
-
 
 class AuthError(Exception):
-    """Authentication error."""
+    """Business-level authentication error."""
 
     def __init__(self, message: str) -> None:
         self.message = message
@@ -42,36 +47,83 @@ class AuthError(Exception):
 
 
 def hash_password(password: str) -> str:
-    """Hash a plain text password."""
+    """Hash a plain text password using pbkdf2_sha256.
+
+    Args:
+        password: Plain text password.
+
+    Returns:
+        Passlib hash string.
+    """
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain text password against a hash."""
+    """Verify a plain text password against a stored hash.
+
+    Args:
+        plain_password: Password provided by the user.
+        hashed_password: Hash stored in the database.
+
+    Returns:
+        True if the password matches the hash.
+    """
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict[str, Any]) -> str:
-    """Create JWT access token.
+def _hash_token(token: str) -> str:
+    """Return a deterministic SHA-256 hash of a token string.
 
     Args:
-        data: Payload to encode.
+        token: Raw JWT string.
+
+    Returns:
+        Hex digest of the token hash.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _extract_jti(payload: dict[str, Any]) -> str | None:
+    """Extract the JWT ID from a decoded payload.
+
+    Args:
+        payload: Decoded JWT payload.
+
+    Returns:
+        JTI value or None if missing.
+    """
+    return payload.get("jti")
+
+
+def create_access_token(data: dict[str, Any]) -> str:
+    """Create a JWT access token.
+
+    The token includes a unique ``jti`` claim so it can be individually
+    revoked before its natural expiration.
+
+    Args:
+        data: Payload to encode. Typically contains ``sub`` (username).
 
     Returns:
         JWT token string.
     """
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expiration_minutes)
-    to_encode.update({"exp": expire, "type": "access"})
-    token = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return token
+    to_encode.update(
+        {
+            "exp": expire,
+            "type": "access",
+            "jti": str(uuid.uuid4()),
+        },
+    )
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def create_refresh_token(data: dict[str, Any]) -> str:
-    """Create JWT refresh token.
+    """Create a JWT refresh token.
 
     Args:
-        data: Payload to encode.
+        data: Payload to encode. Typically contains ``sub`` (username).
 
     Returns:
         JWT refresh token string.
@@ -79,118 +131,245 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_expiration_days)
     to_encode.update({"exp": expire, "type": "refresh"})
-    token = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return token
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate JWT access token.
+async def decode_access_token(session: AsyncSession, token: str) -> dict[str, Any] | None:
+    """Decode and validate a JWT access token.
 
     Args:
+        session: Database session for blacklist lookup.
         token: JWT token string.
 
     Returns:
-        Decoded payload or None if invalid or revoked.
+        Decoded payload or None if the token is invalid, expired or revoked.
     """
-    if is_token_revoked(token):
-        return None
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        if payload.get("type") != "access":
-            return None
-        return payload
-    except JWTError as e:
-        logger.warning("JWT decode failed", extra={"error": str(e)})
+    except JWTError as exc:
+        logger.warning("JWT decode failed", extra={"error": str(exc)})
         return None
 
+    if payload.get("type") != "access":
+        return None
 
-def decode_refresh_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate JWT refresh token.
+    jti = _extract_jti(payload)
+    if jti is None:
+        # Access tokens created after this refactor must contain a jti claim.
+        return None
+
+    if await is_token_revoked(session, jti):
+        return None
+
+    return payload
+
+
+async def decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Decode and validate a JWT refresh token.
 
     Args:
         token: JWT refresh token string.
 
     Returns:
-        Decoded payload or None if invalid.
+        Decoded payload or None if invalid or expired.
     """
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        if payload.get("type") != "refresh":
-            return None
-        return payload
-    except JWTError as e:
-        logger.warning("Refresh token decode failed", extra={"error": str(e)})
+    except JWTError as exc:
+        logger.warning("Refresh token decode failed", extra={"error": str(exc)})
         return None
 
+    if payload.get("type") != "refresh":
+        return None
 
-def revoke_access_token(token: str) -> None:
-    """Add access token to blacklist."""
-    with _blacklist_lock:
-        _token_blacklist.add(token)
-
-
-def is_token_revoked(token: str) -> bool:
-    """Check if access token is revoked."""
-    with _blacklist_lock:
-        return token in _token_blacklist
+    return payload
 
 
-def store_refresh_token(token: str, username: str) -> None:
-    """Store refresh token with expiration."""
-    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_expiration_days)
-    with _refresh_lock:
-        _refresh_tokens[token] = {"sub": username, "exp": expire}
-
-
-def get_refresh_token(token: str) -> dict[str, Any] | None:
-    """Retrieve refresh token data if valid."""
-    with _refresh_lock:
-        data = _refresh_tokens.get(token)
-        if not data:
-            return None
-        if datetime.now(UTC) > data["exp"]:
-            del _refresh_tokens[token]
-            return None
-        return data
-
-
-def clear_refresh_token(token: str) -> None:
-    """Remove refresh token from storage."""
-    with _refresh_lock:
-        _refresh_tokens.pop(token, None)
-
-
-# Brute-force helpers
-
-
-def is_brute_force_locked(username: str) -> bool:
-    """Check if account is locked due to too many failed login attempts.
+async def revoke_access_token(session: AsyncSession, token: str) -> None:
+    """Revoke an access token before its expiration.
 
     Args:
+        session: Database session.
+        token: Access token to revoke.
+
+    Raises:
+        AuthError: If the token does not contain a ``jti`` claim.
+    """
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError as exc:
+        logger.warning("Cannot revoke token: decode failed", extra={"error": str(exc)})
+        return
+
+    jti = _extract_jti(payload)
+    if jti is None:
+        raise AuthError("Token does not contain a jti claim and cannot be revoked")
+
+    expires_at_raw = payload.get("exp")
+    if expires_at_raw is None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.jwt_expiration_minutes)
+    else:
+        expires_at = datetime.fromtimestamp(expires_at_raw, tz=UTC)
+
+    repo = TokenBlacklistRepository(session)
+    try:
+        await repo.add(jti, expires_at)
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while revoking access token")
+        raise AppError("Failed to revoke token", status_code=500) from exc
+
+
+async def is_token_revoked(session: AsyncSession, jti: str) -> bool:
+    """Check whether an access token JTI is revoked.
+
+    Args:
+        session: Database session.
+        jti: JWT ID to check.
+
+    Returns:
+        True if the JTI is present in the blacklist.
+    """
+    repo = TokenBlacklistRepository(session)
+    try:
+        return await repo.is_revoked(jti)
+    except DBAPIError as exc:
+        logger.exception("Database error while checking token revocation")
+        raise AppError("Failed to validate token", status_code=500) from exc
+
+
+async def store_refresh_token(session: AsyncSession, token: str, username: str) -> None:
+    """Persist a refresh token for the given user.
+
+    Args:
+        session: Database session.
+        token: Raw refresh token string.
+        username: Username of the token owner.
+
+    Raises:
+        AuthError: If the user does not exist.
+        AppError: On unexpected database errors.
+    """
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_username(username)
+    if user is None:
+        raise AuthError(f"User '{username}' not found")
+
+    payload = decode_refresh_token(token)
+    if payload is None:
+        raise AuthError("Invalid refresh token")
+
+    expires_at_raw = payload.get("exp")
+    if expires_at_raw is None:
+        expires_at = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_expiration_days)
+    else:
+        expires_at = datetime.fromtimestamp(expires_at_raw, tz=UTC)
+
+    token_hash = _hash_token(token)
+    refresh_repo = RefreshTokenRepository(session)
+    try:
+        await refresh_repo.create(user.id, token_hash, expires_at)
+        # Best-effort cleanup of expired tokens for this user.
+        await refresh_repo.cleanup_expired()
+    except AuthRepositoryError as exc:
+        # Duplicate token hash: log and continue without failing the login.
+        logger.warning("Refresh token hash collision", extra={"error": str(exc)})
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while storing refresh token")
+        raise AppError("Failed to store refresh token", status_code=500) from exc
+
+
+async def get_refresh_token(session: AsyncSession, token: str) -> dict[str, Any] | None:
+    """Retrieve refresh token data if it exists and is still valid.
+
+    Args:
+        session: Database session.
+        token: Raw refresh token string.
+
+    Returns:
+        Dictionary with ``sub`` (username) and ``exp`` (expiration) if valid,
+        otherwise None.
+    """
+    token_hash = _hash_token(token)
+    repo = RefreshTokenRepository(session)
+    try:
+        stored = await repo.get_by_token_hash(token_hash)
+    except DBAPIError as exc:
+        logger.exception("Database error while reading refresh token")
+        raise AppError("Failed to validate refresh token", status_code=500) from exc
+
+    if stored is None:
+        return None
+    if stored.revoked_at is not None:
+        return None
+    if datetime.now(UTC) > stored.expires_at:
+        return None
+
+    return {"sub": stored.user.username, "exp": stored.expires_at}
+
+
+async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
+    """Remove a refresh token from storage (logout).
+
+    Args:
+        session: Database session.
+        token: Raw refresh token string.
+
+    Returns:
+        True if a token was found and removed, False otherwise.
+    """
+    token_hash = _hash_token(token)
+    repo = RefreshTokenRepository(session)
+    try:
+        return await repo.revoke(token_hash)
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while clearing refresh token")
+        raise AppError("Failed to clear refresh token", status_code=500) from exc
+
+
+async def is_brute_force_locked(session: AsyncSession, username: str) -> bool:
+    """Check if an account is temporarily locked due to failed login attempts.
+
+    Args:
+        session: Database session.
         username: Username to check.
 
     Returns:
-        True if account is temporarily locked.
+        True if the account is temporarily locked.
     """
-    now = datetime.now(UTC)
-    with _brute_lock:
-        attempts = _failed_attempts.get(username, [])
-        cutoff = now - timedelta(minutes=BRUTE_FORCE_WINDOW_MINUTES)
-        attempts = [t for t in attempts if t > cutoff]
-        _failed_attempts[username] = attempts
-        return len(attempts) >= BRUTE_FORCE_MAX_ATTEMPTS
+    repo = FailedLoginAttemptRepository(session)
+    cutoff = datetime.now(UTC) - timedelta(minutes=BRUTE_FORCE_WINDOW_MINUTES)
+    try:
+        attempts = await repo.count_recent(username, cutoff)
+    except DBAPIError as exc:
+        logger.exception("Database error while checking brute-force lock")
+        raise AppError("Failed to check account lock", status_code=500) from exc
+
+    return attempts >= BRUTE_FORCE_MAX_ATTEMPTS
 
 
-def record_failed_login(username: str, client_ip: str) -> None:
+async def record_failed_login(session: AsyncSession, username: str, client_ip: str) -> None:
     """Record a failed login attempt.
 
     Args:
+        session: Database session.
         username: Username that failed to log in.
         client_ip: Client IP address.
     """
-    now = datetime.now(UTC)
-    with _brute_lock:
-        _failed_attempts.setdefault(username, []).append(now)
+    repo = FailedLoginAttemptRepository(session)
+    try:
+        await repo.record(username, client_ip)
+        # Cleanup attempts older than the brute-force window to keep the
+        # table small.
+        cutoff = datetime.now(UTC) - timedelta(minutes=BRUTE_FORCE_WINDOW_MINUTES)
+        await repo.cleanup_old(cutoff)
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while recording failed login")
+        raise AppError("Failed to record login attempt", status_code=500) from exc
+
     log_security_event(
         "auth.login.failed",
         severity="warning",
@@ -199,53 +378,96 @@ def record_failed_login(username: str, client_ip: str) -> None:
     )
 
 
-def register_user(username: str, password: str, client_ip: str) -> dict[str, Any]:
+async def register_user(
+    session: AsyncSession,
+    username: str,
+    password: str,
+    client_ip: str,
+) -> dict[str, str]:
     """Register a new user.
 
     Args:
+        session: Database session.
         username: Unique username.
         password: Plain text password.
         client_ip: Client IP address.
 
     Returns:
-        User data dict.
+        User data dict with username.
 
     Raises:
         AuthError: If username already exists.
+        AppError: On unexpected database errors.
     """
-    if username in _users:
-        raise AuthError("Username already registered")
-    user = {"username": username, "hashed_password": hash_password(password)}
-    _users[username] = user
+    repo = UserRepository(session)
+    try:
+        user = await repo.create(username, hash_password(password))
+    except AuthRepositoryError as exc:
+        raise AuthError(str(exc)) from exc
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while registering user")
+        raise AppError("Failed to register user", status_code=500) from exc
+
     log_security_event("auth.register", ip=client_ip, user=username)
-    return {"username": username}
+    return {"username": user.username}
 
 
-def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
+async def authenticate_user(
+    session: AsyncSession,
+    username: str,
+    password: str,
+) -> dict[str, Any] | None:
     """Authenticate user by username and password.
 
     Args:
+        session: Database session.
         username: Username.
         password: Plain text password.
 
     Returns:
-        User data if authenticated, None otherwise.
+        User data dict if authenticated, None otherwise.
+
+    Raises:
+        AppError: On unexpected database errors.
     """
-    user = _users.get(username)
-    if not user:
+    repo = UserRepository(session)
+    try:
+        user = await repo.get_by_username(username)
+    except DBAPIError as exc:
+        logger.exception("Database error while authenticating user")
+        raise AppError("Failed to authenticate user", status_code=500) from exc
+
+    if user is None:
         return None
-    if not verify_password(password, user["hashed_password"]):
+    if not user.is_active:
         return None
-    return user
+    if not verify_password(password, user.password_hash):
+        return None
+
+    return {"username": user.username}
 
 
-def get_user(username: str) -> dict[str, Any] | None:
+async def get_user(session: AsyncSession, username: str) -> dict[str, Any] | None:
     """Get user by username.
 
     Args:
+        session: Database session.
         username: Username.
 
     Returns:
-        User data or None.
+        User data dict or None if not found.
+
+    Raises:
+        AppError: On unexpected database errors.
     """
-    return _users.get(username)
+    repo = UserRepository(session)
+    try:
+        user = await repo.get_by_username(username)
+    except DBAPIError as exc:
+        logger.exception("Database error while fetching user")
+        raise AppError("Failed to fetch user", status_code=500) from exc
+
+    if user is None:
+        return None
+    return {"username": user.username}
