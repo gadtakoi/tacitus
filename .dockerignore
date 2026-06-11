@@ -217,6 +217,11 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
 # mkdocs documentation
 /site
 

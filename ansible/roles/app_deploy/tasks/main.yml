@@ -48,13 +48,21 @@
     mode: "0644"
   notify: Restart Tacitus
 
-- name: Copy frontend source code
-  ansible.builtin.copy:
+- name: Sync frontend source code
+  ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../frontend/"
     dest: "{{ tacitus_deploy_dir }}/frontend/"
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0644"
+    owner: yes
+    group: yes
+    perms: yes
+    recursive: yes
+    # Исключаем мусор, который точно не нужен на сервере
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=node_modules"
+      - "--exclude=dist"
+      - "--exclude=.env"
+      - "--exclude=.DS_Store"
   notify: Restart Tacitus
 
 - name: Copy scripts
