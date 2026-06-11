@@ -6,6 +6,34 @@
 docker compose up -d
 ```
 
+### Применение миграций базы данных
+
+В Docker Compose миграции применяются автоматически сервисом `db-migrations`
+при каждом запуске стека:
+
+```bash
+docker compose up -d db-migrations
+```
+
+При локальной разработке без Docker примените миграции вручную:
+
+```bash
+# Убедитесь, что переменная TACITUS_DATABASE_URL задана
+export TACITUS_DATABASE_URL="postgresql+asyncpg://tacitus:tacitus@localhost:5432/tacitus"
+
+# Применить все миграции
+alembic upgrade head
+
+# Откатить последнюю миграцию
+alembic downgrade -1
+
+# Перегенерировать миграцию после изменения моделей
+alembic revision --autogenerate -m "describe your change"
+```
+
+> **Важно:** никогда не редактируйте существующие миграции после их применения
+> в production. Если модель изменилась — создайте новую миграцию.
+
 ---
 
 ## Развёртывание через Ansible
