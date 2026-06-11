@@ -1,7 +1,13 @@
-"""Dedicated security logging module."""
+"""Dedicated security logging module.
+
+Provides file-based structured security logging and middleware that detects
+suspicious patterns (many 401/403 responses from a single IP) by storing
+events in PostgreSQL.
+"""
+
+from __future__ import annotations
 
 import logging
-import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -9,8 +15,20 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.ip import get_client_ip
+from app.db.engine import AsyncSessionLocal
+from app.db.repositories.auth import SecurityEventRepository
 
 logger = logging.getLogger("security")
+
+# Window and threshold for detecting suspicious activity from a single IP.
+SUSPICIOUS_WINDOW_MINUTES = 5
+SUSPICIOUS_THRESHOLD = 100
+
+# Events older than this are considered stale and can be cleaned up.
+SECURITY_EVENT_RETENTION_DAYS = 7
+
+# Run cleanup approximately every N events processed by this process.
+_CLEANUP_INTERVAL = 100
 
 
 def log_security_event(
@@ -20,7 +38,7 @@ def log_security_event(
     user: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
-    """Log a structured security event.
+    """Log a structured security event to the security log file.
 
     Args:
         event_type: Event category, e.g. ``auth.login.success``.
@@ -45,40 +63,74 @@ def log_security_event(
 
 
 class SuspiciousActivityMiddleware(BaseHTTPMiddleware):
-    """Middleware that detects brute-force-like patterns (401/403 spikes)."""
+    """Middleware that detects brute-force-like patterns (401/403 spikes).
 
-    _lock = threading.Lock()
-    _responses: dict[str, list[datetime]] = {}
+    For every 401/403 response the middleware persists a security event to
+    PostgreSQL and checks whether the same IP has produced more than
+    ``SUSPICIOUS_THRESHOLD`` such events within ``SUSPICIOUS_WINDOW_MINUTES``.
+    Old events are cleaned up periodically to control table growth.
+    """
+
+    _event_counter: int = 0
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         """Track 401/403 responses and log suspicious activity.
 
         Args:
             request: Incoming request.
-            call_next: Next handler.
+            call_next: Next handler in the middleware stack.
 
         Returns:
             Response object.
         """
         response = await call_next(request)
-        if response.status_code in (401, 403):
-            ip = get_client_ip(request)
-            now = datetime.now(UTC)
-            with self._lock:
-                timestamps = self._responses.get(ip, [])
-                cutoff = now - timedelta(minutes=5)
-                timestamps = [t for t in timestamps if t > cutoff]
-                timestamps.append(now)
-                self._responses[ip] = timestamps
-                if len(timestamps) > 100:
-                    log_security_event(
-                        "security.suspicious_activity",
-                        severity="warning",
-                        ip=ip,
-                        extra={
-                            "count": len(timestamps),
-                            "window_minutes": 5,
-                            "status_code": response.status_code,
-                        },
+
+        if response.status_code not in (401, 403):
+            return response
+
+        ip = get_client_ip(request)
+        now = datetime.now(UTC)
+
+        async with AsyncSessionLocal() as session:
+            repo = SecurityEventRepository(session)
+            await repo.record(
+                event_type="security.response.failure",
+                ip_address=ip,
+                details={
+                    "status_code": response.status_code,
+                    "path": request.url.path,
+                    "method": request.method,
+                },
+            )
+
+            cutoff = now - timedelta(minutes=SUSPICIOUS_WINDOW_MINUTES)
+            count = await repo.count_recent_by_ip(ip, cutoff)
+
+            if count > SUSPICIOUS_THRESHOLD:
+                log_security_event(
+                    "security.suspicious_activity",
+                    severity="warning",
+                    ip=ip,
+                    extra={
+                        "count": count,
+                        "window_minutes": SUSPICIOUS_WINDOW_MINUTES,
+                        "status_code": response.status_code,
+                        "threshold": SUSPICIOUS_THRESHOLD,
+                    },
+                )
+
+            # Best-effort periodic cleanup of stale events. The counter is
+            # process-local, so cleanup may happen more or less often in
+            # multi-instance deployments, but the table stays bounded.
+            SuspiciousActivityMiddleware._event_counter += 1
+            if SuspiciousActivityMiddleware._event_counter >= _CLEANUP_INTERVAL:
+                SuspiciousActivityMiddleware._event_counter = 0
+                retention_cutoff = now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS)
+                cleaned = await repo.cleanup_old(retention_cutoff)
+                if cleaned:
+                    logger.info(
+                        "Cleaned up stale security events",
+                        extra={"count": cleaned},
                     )
+
         return response

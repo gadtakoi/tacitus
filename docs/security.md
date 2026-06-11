@@ -43,9 +43,11 @@ Nginx добавляет следующие security headers ко всем от�
 
 ### 2.2 Brute Force Protection
 
-- In-memory счётчик неудачных попыток входа с окном 15 минут.
+- Неудачные попытки входа хранятся в таблице `failed_login_attempts` (PostgreSQL)
+  с окном 15 минут.
 - Блокировка аккаунта после 5 неудачных попыток подряд.
-- Все неудачные попытки логируются с `username` и `client_ip`.
+- Все неудачные попытки логируются с `username` и `client_ip` и записываются в
+  `security_events`.
 
 ### 2.3 Password Policy
 
@@ -61,11 +63,11 @@ Nginx добавляет следующие security headers ко всем от�
 
 ### 2.4 Token Management
 
-- Access token: TTL **15 минут**.
-- Refresh token: TTL **7 дней**, хранится в in-memory store.
+- Access token: TTL **15 минут**, содержит уникальный `jti` для отзыва.
+- Refresh token: TTL **7 дней**, хранится в таблице `refresh_tokens` (PostgreSQL).
 - `POST /auth/refresh` — обмен refresh token на новый access token.
-- `POST /auth/logout` — добавление access token в blacklist.
-- `decode_access_token()` проверяет blacklist перед валидацией.
+- `POST /auth/logout` — добавление `jti` access token в таблицу `revoked_tokens`.
+- `decode_access_token()` проверяет `revoked_tokens` перед валидацией.
 
 ### 2.5 Startup Secret Validation
 
@@ -169,9 +171,12 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 
 ### 6.2 Suspicious Activity Detection
 
-`SuspiciousActivityMiddleware` отслеживает 401/403 ответы по IP:
+`SuspiciousActivityMiddleware` отслеживает 401/403 ответы по IP и сохраняет их
+в таблице `security_events` (PostgreSQL):
 
 - При >100 запросов за 5 минут логируется `security.suspicious_activity` (warning).
+- Устаревшие события (старше 7 дней) очищаются периодически, чтобы таблица не
+  росла неограниченно.
 
 ---
 
