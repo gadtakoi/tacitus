@@ -114,22 +114,29 @@
 
 ## 5. Создание репозиториев для работы с БД
 
-- [ ] В `app/db/repositories/` создать (или расширить) репозитории:
+- [x] В `app/db/repositories/` создать (или расширить) репозитории:
   - `UserRepository` — CRUD и поиск пользователя по username.
   - `RefreshTokenRepository` — создание, поиск, отзыв, очистка протухших.
   - `TokenBlacklistRepository` — добавление JTI в blacklist, проверка наличия.
   - `FailedLoginAttemptRepository` — запись попытки, подсчёт за окно,
     очистка старых записей.
   - `SecurityEventRepository` — запись события, подсчёт за окно, очистка.
-- [ ] Использовать протоколы (typing.Protocol) или абстрактные базовые классы
+- [x] Использовать протоколы (typing.Protocol) или абстрактные базовые классы
   для репозиториев, чтобы упростить будущее unit-тестирование.
-- [ ] Каждый метод репозитория должен:
+  - Создан `app/db/repositories/base.py` с `RepositoryError` и `BaseRepository`.
+- [x] Каждый метод репозитория должен:
   - принимать `AsyncSession`,
   - выполнять один запрос и возвращать результат,
   - содержать docstring с описанием аргументов, возвращаемого значения и
     возможных исключений.
-- [ ] Добавить обработку `IntegrityError` и преобразование её в понятные
+- [x] Добавить обработку `IntegrityError` и преобразование её в понятные
   бизнес-исключения.
+  - `UserRepository.create` преобразует `IntegrityError` в
+    `AuthRepositoryError` при дублировании username.
+  - `RefreshTokenRepository.create` преобразует `IntegrityError` при
+    дублировании token hash.
+  - `TokenBlacklistRepository.add` использует PostgreSQL upsert
+    (`ON CONFLICT DO NOTHING`) для идемпотентности.
 
 ---
 
