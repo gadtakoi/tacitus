@@ -2,9 +2,8 @@
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Base
 from app.schemas.streams import (
     StreamConfig,
     StreamCreateRequest,
@@ -12,46 +11,6 @@ from app.schemas.streams import (
     StreamUpdateRequest,
 )
 from app.services import stream_config_service as svc
-
-TEST_DATABASE_URL = "postgresql+asyncpg://tacitus:tacitus@localhost:15432/tacitus"
-
-
-@pytest.fixture(scope="session")
-def anyio_backend() -> str:
-    """Specify anyio backend for pytest-asyncio."""
-    return "asyncio"
-
-
-@pytest.fixture(scope="session")
-async def engine():
-    """Create async engine for tests."""
-    test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield test_engine
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await test_engine.dispose()
-
-
-@pytest.fixture
-async def db_session(engine) -> AsyncSession:
-    """Provide a transactional database session that rolls back after each test."""
-    async with engine.connect() as connection:
-        trans = await connection.begin()
-        session_maker = async_sessionmaker(
-            connection,
-            expire_on_commit=False,
-            autoflush=False,
-            autocommit=False,
-        )
-        session = session_maker()
-        try:
-            yield session
-        finally:
-            await session.close()
-            await trans.rollback()
-
 
 # ---------------------------------------------------------------------------
 # Schema validation tests
