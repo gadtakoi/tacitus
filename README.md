@@ -7,11 +7,13 @@ Tacitus — fullstack-приложение для управления файл�
 
 ## Стек
 
-- **Backend:** Python 3.14, FastAPI, Uvicorn
+- **Backend:** Python 3.14, FastAPI, Uvicorn, SQLAlchemy 2.0, asyncpg, Alembic
 - **Frontend:** React 18, TypeScript, Vite
+- **Database:** PostgreSQL 15+
 - **Storage:** MinIO (S3-compatible)
 - **Media:** MediaMTX (RTSP-сервер с записью потоков)
 - **Proxy:** Nginx
+- **Rate limiting:** slowapi + limits (`memory://` dev, `redis://` production)
 - **Deployment:** Docker Compose, Ansible
 
 ## Быстрый старт
@@ -74,19 +76,21 @@ pytest tests/ --cov=app --cov-report=term-missing
 
 ## Переменные окружения
 
-| Переменная                       | Default                   | Описание                 |
-|----------------------------------|---------------------------|--------------------------|
-| `TACITUS_JWT_SECRET`             | `change-me-in-production` | Секрет для JWT           |
-| `TACITUS_JWT_ALGORITHM`          | `HS256`                   | Алгоритм JWT             |
-| `TACITUS_JWT_EXPIRATION_MINUTES` | `30`                      | TTL токена               |
-| `TACITUS_S3_ENDPOINT`            | `http://minio:9000`       | URL MinIO                |
-| `TACITUS_S3_ACCESS_KEY`          | `minioadmin`              | MinIO access key         |
-| `TACITUS_S3_SECRET_KEY`          | `minioadmin`              | MinIO secret key         |
-| `TACITUS_S3_BUCKET`              | `tacitus-files`           | Bucket для файлов        |
-| `TACITUS_MTX_RTSP_PORT`          | `8554`                    | RTSP-порт MediaMTX       |
-| `TACITUS_MTX_API_URL`            | `http://mediamtx:9997/v3` | URL Control API MediaMTX |
-| `TACITUS_MTX_MAX_AGE_DAYS`       | `7`                       | Макс. возраст записей    |
-| `TACITUS_MTX_MAX_SIZE_GB`        | `50`                      | Макс. размер архива (ГБ) |
+| Переменная                       | Default                                       | Описание                                              |
+|----------------------------------|-----------------------------------------------|-------------------------------------------------------|
+| `TACITUS_JWT_SECRET`             | `change-me-in-production`                     | Секрет для JWT                                        |
+| `TACITUS_JWT_ALGORITHM`          | `HS256`                                       | Алгоритм JWT                                          |
+| `TACITUS_JWT_EXPIRATION_MINUTES` | `30`                                          | TTL access-токена                                     |
+| `TACITUS_DATABASE_URL`           | `postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus` | URL PostgreSQL через asyncpg         |
+| `TACITUS_RATE_LIMIT_STORAGE_URI` | `memory://`                                   | Backend rate limiting (`memory://` dev, `redis://` prod) |
+| `TACITUS_S3_ENDPOINT`            | `http://minio:9000`                           | URL MinIO                                             |
+| `TACITUS_S3_ACCESS_KEY`          | `minioadmin`                                  | MinIO access key                                      |
+| `TACITUS_S3_SECRET_KEY`          | `minioadmin`                                  | MinIO secret key                                      |
+| `TACITUS_S3_BUCKET`              | `tacitus-files`                               | Bucket для файлов                                     |
+| `TACITUS_MTX_RTSP_PORT`          | `8554`                                        | RTSP-порт MediaMTX                                    |
+| `TACITUS_MTX_API_URL`            | `http://mediamtx:9997/v3`                     | URL Control API MediaMTX                              |
+| `TACITUS_MTX_MAX_AGE_DAYS`       | `7`                                           | Макс. возраст записей                                 |
+| `TACITUS_MTX_MAX_SIZE_GB`        | `50`                                          | Макс. размер архива (ГБ)                              |
 
 > ⚠️ **В production** все dev defaults должны быть переопределены через env vars.
 

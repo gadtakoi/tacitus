@@ -5,6 +5,8 @@
 - **Python** 3.14+
 - **FastAPI** — веб-фреймворк
 - **Pydantic** — валидация и сериализация
+- **SQLAlchemy 2.0** + **asyncpg** — async ORM и драйвер PostgreSQL
+- **Alembic** — миграции базы данных
 - **python-jose** — JWT токены
 - **passlib** — хеширование паролей (pbkdf2_sha256)
 - **boto3** — клиент для S3 (MinIO)
@@ -26,6 +28,12 @@ app/
 │   ├── exceptions.py        # AppError и обработчики
 │   ├── logging_config.py    # Structured logging
 │   └── middleware.py        # RequestIdMiddleware
+├── db/
+│   ├── engine.py            # Async SQLAlchemy engine и session factory
+│   ├── models.py            # SQLAlchemy ORM модели
+│   └── repositories/        # Слой доступа к данным
+│       ├── auth.py          # User, RefreshToken, RevokedToken, ...
+│       └── base.py          # Базовый класс репозитория
 ├── schemas/
 │   ├── auth.py              # RegisterRequest, LoginRequest, TokenResponse
 │   ├── files.py             # FileUploadResponse, FileListResponse, ...
@@ -34,16 +42,21 @@ app/
 └── services/
     ├── auth_service.py      # Регистрация, логин, JWT lifecycle
     ├── hello_service.py     # Hello World business logic
-    └── s3_service.py        # CRUD операции с MinIO
+    ├── s3_service.py        # CRUD операции с MinIO
+    └── stream_config_service.py  # Управление RTSP-потоками
 ```
 
 ## Аутентификация
 
 - Регистрация и логин через JSON body (не query params — security)
-- JWT access token с TTL 15 минут
+- JWT access token с TTL 15 минут, содержит уникальный `jti` для отзыва
 - Refresh token с TTL 7 дней
 - Пароли хешируются через `pbkdf2_sha256` (passlib)
-- Пользователи, токены и security-события хранятся в PostgreSQL
+- Пользователи, refresh-токены, отозванные access-токены, неудачные попытки
+  входа и security-события хранятся в **PostgreSQL** через SQLAlchemy 2.0
+  (ранее использовалось in-memory хранилище)
+- `get_current_user` получает `AsyncSession` и проверяет токен против таблицы
+  `revoked_tokens` в БД
 
 ## Rate limiting
 
@@ -54,6 +67,42 @@ app/
   - `redis://redis:6379` — общее хранилище для production / multi-instance.
 - Библиотека `limits` не поддерживает PostgreSQL в качестве storage, поэтому для
   распределённых инсталляций используется Redis.
+
+## Репозитории
+
+Слой доступа к данным живёт в `app/db/repositories/` и изолирует SQLAlchemy
+от бизнес-логики сервисов.
+
+| Репозиторий | Назначение |
+|-------------|------------|
+| `UserRepository` | CRUD пользователей, поиск по `username`, проверка уникальности |
+| `RefreshTokenRepository` | Создание, поиск по хешу, отзыв, очистка протухших refresh-токенов |
+| `TokenBlacklistRepository` | Идемпотентное добавление `jti` в blacklist, проверка отозванных токенов |
+| `FailedLoginAttemptRepository` | Запись неудачных входов, подсчёт за окно, очистка старых записей |
+| `SecurityEventRepository` | Запись security-событий, подсчёт по IP, очистка устаревших событий |
+
+Каждый репозиторий принимает `AsyncSession` в конструкторе и преобразует
+`IntegrityError` в понятные исключения `AuthRepositoryError` / `RepositoryError`.
+Это упрощает unit-тестирование с моками и позволяет в будущем заменить
+SQLAlchemy на другой слой доступа к данным без изменения сервисов.
+
+## Миграции
+
+Миграции управляются Alembic. Файлы миграций находятся в
+`migrations/versions/`.
+
+```bash
+# Применить все миграции
+alembic upgrade head
+
+# Откатить последнюю миграцию
+alembic downgrade -1
+
+# Сгенерировать новую миграцию после изменения моделей
+alembic revision --autogenerate -m "describe your change"
+```
+
+При запуске через Docker Compose миграции применяет сервис `db-migrations`.
 
 ## Схема базы данных
 
@@ -190,19 +239,21 @@ pip install -e ".[dev]"
 
 ### Переменные окружения (префикс `TACITUS_`)
 
-| Переменная               | По умолчанию              | Описание                                                 |
-|--------------------------|---------------------------|----------------------------------------------------------|
-| `JWT_SECRET`             | `change-me-in-production` | Секрет для JWT (обязательно переопределить в production) |
-| `JWT_ALGORITHM`          | `HS256`                   | Алгоритм JWT                                             |
-| `JWT_EXPIRATION_MINUTES` | `30`                      | TTL access-токена                                        |
-| `S3_ENDPOINT`            | `http://minio:9000`       | URL S3-хранилища                                         |
-| `S3_ACCESS_KEY`          | `minioadmin`              | S3 access key                                            |
-| `S3_SECRET_KEY`          | `minioadmin`              | S3 secret key                                            |
-| `S3_BUCKET`              | `tacitus-files`           | Bucket для файлов                                        |
-| `MTX_API_URL`            | `http://mediamtx:9997/v3` | URL Control API MediaMTX                                 |
-| `MTX_RTSP_PORT`          | `8554`                    | Порт RTSP                                                |
-| `MTX_MAX_AGE_DAYS`       | `7`                       | Макс. возраст записей (для cleanup)                      |
-| `MTX_MAX_SIZE_GB`        | `50`                      | Макс. размер архива (для cleanup)                        |
+| Переменная                  | По умолчанию                       | Описание                                                 |
+|-----------------------------|------------------------------------|----------------------------------------------------------|
+| `JWT_SECRET`                | `change-me-in-production`          | Секрет для JWT (обязательно переопределить в production) |
+| `JWT_ALGORITHM`             | `HS256`                            | Алгоритм JWT                                             |
+| `JWT_EXPIRATION_MINUTES`    | `30`                               | TTL access-токена                                        |
+| `DATABASE_URL`              | `postgresql+asyncpg://tacitus:...` | URL PostgreSQL через asyncpg                             |
+| `RATE_LIMIT_STORAGE_URI`    | `memory://`                        | Backend rate limiting (`memory://` или `redis://...`)    |
+| `S3_ENDPOINT`               | `http://minio:9000`                | URL S3-хранилища                                         |
+| `S3_ACCESS_KEY`             | `minioadmin`                       | S3 access key                                            |
+| `S3_SECRET_KEY`             | `minioadmin`                       | S3 secret key                                            |
+| `S3_BUCKET`                 | `tacitus-files`                    | Bucket для файлов                                        |
+| `MTX_API_URL`               | `http://mediamtx:9997/v3`          | URL Control API MediaMTX                                 |
+| `MTX_RTSP_PORT`             | `8554`                             | Порт RTSP                                                |
+| `MTX_MAX_AGE_DAYS`          | `7`                                | Макс. возраст записей (для cleanup)                      |
+| `MTX_MAX_SIZE_GB`           | `50`                               | Макс. размер архива (для cleanup)                        |
 
 ## Логирование
 

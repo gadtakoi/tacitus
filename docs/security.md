@@ -30,7 +30,8 @@ Nginx добавляет следующие security headers ко всем от�
 
 ### 2.1 Rate Limiting
 
-Установлен `slowapi` с in-memory storage. Лимиты:
+Установлен `slowapi` + `limits`. Ключ rate-limit формируется как
+`user:<sub>` для авторизованных запросов и `ip:<client_ip>` для анонимных.
 
 | Endpoint              | Лимит  | Ключ         |
 |-----------------------|--------|--------------|
@@ -40,6 +41,14 @@ Nginx добавляет следующие security headers ко всем от�
 | `GET /files/`         | 60/мин | пользователь |
 
 При превышении возвращается `429 Too Many Requests`.
+
+Хранилище счётчиков задаётся `TACITUS_RATE_LIMIT_STORAGE_URI`:
+
+- `memory://` — в процессе (dev, не подходит для нескольких инстансов).
+- `redis://redis:6379` — общее хранилище для production / multi-instance.
+
+Библиотека `limits` не поддерживает PostgreSQL как storage, поэтому для
+распределённых инсталляций используется Redis.
 
 ### 2.2 Brute Force Protection
 
@@ -65,9 +74,11 @@ Nginx добавляет следующие security headers ко всем от�
 
 - Access token: TTL **15 минут**, содержит уникальный `jti` для отзыва.
 - Refresh token: TTL **7 дней**, хранится в таблице `refresh_tokens` (PostgreSQL).
+  Хранится только SHA-256 хеш токена, а не сам токен.
 - `POST /auth/refresh` — обмен refresh token на новый access token.
-- `POST /auth/logout` — добавление `jti` access token в таблицу `revoked_tokens`.
-- `decode_access_token()` проверяет `revoked_tokens` перед валидацией.
+- `POST /auth/logout` — добавление `jti` access token в таблицу `revoked_tokens`
+  с помощью PostgreSQL upsert (`ON CONFLICT DO NOTHING`) для идемпотентности.
+- `decode_access_token()` проверяет `revoked_tokens` в БД перед валидацией.
 
 ### 2.5 Startup Secret Validation
 
@@ -174,7 +185,9 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 `SuspiciousActivityMiddleware` отслеживает 401/403 ответы по IP и сохраняет их
 в таблице `security_events` (PostgreSQL):
 
-- При >100 запросов за 5 минут логируется `security.suspicious_activity` (warning).
+- Каждый 401/403 ответ порождает запись `security.response.failure`.
+- При >100 запросов за 5 минут с одного IP логируется
+  `security.suspicious_activity` (warning).
 - Устаревшие события (старше 7 дней) очищаются периодически, чтобы таблица не
   росла неограниченно.
 
@@ -310,7 +323,9 @@ python scripts/generate-sbom.py
 - [ ] HTTPS включён
 - [ ] Security headers настроены в nginx
 - [ ] CORS origins не содержат `*`
-- [ ] Rate limiting активен
+- [ ] Rate limiting активен (в production рекомендуется Redis backend)
+- [ ] PostgreSQL настроен, миграции применены (`alembic upgrade head`)
+- [ ] `TACITUS_DATABASE_URL` и `TACITUS_RATE_LIMIT_STORAGE_URI` заданы корректно
 - [ ] Non-root контейнеры
 - [ ] `read_only: true` для app и nginx
 - [ ] `.env` недоступен через nginx

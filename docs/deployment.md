@@ -6,6 +6,35 @@
 docker compose up -d
 ```
 
+### Настройка PostgreSQL
+
+В Docker Compose сервис `postgres` поднимается автоматически. При первом
+запуске он создаёт базу, пользователя и пароль из переменных окружения
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+
+Для локальной разработки без Docker убедитесь, что PostgreSQL доступен и
+создана база данных:
+
+```bash
+# Пример для psql
+createdb -U tacitus tacitus
+```
+
+Установите `TACITUS_DATABASE_URL`:
+
+```bash
+export TACITUS_DATABASE_URL="postgresql+asyncpg://tacitus:tacitus@localhost:5432/tacitus"
+```
+
+### Rate limiting backend
+
+По умолчанию используется `memory://` (подходит только для одного процесса).
+Для production или нескольких инстансов приложения настройте Redis:
+
+```bash
+export TACITUS_RATE_LIMIT_STORAGE_URI="redis://redis:6379"
+```
+
 ### Применение миграций базы данных
 
 В Docker Compose миграции применяются автоматически сервисом `db-migrations`
@@ -229,6 +258,30 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 Полный список — в файлах `ansible/group_vars/all.yml` и `ansible/roles/*/defaults/main.yml`.
 
+### Резервное копирование базы данных
+
+Рекомендуется регулярно резервировать PostgreSQL. Примеры команд:
+
+```bash
+# Логический бэкап через pg_dump
+pg_dump -U tacitus -h localhost -Fc tacitus > tacitus_$(date +%Y%m%d).dump
+
+# Восстановление из бэкапа
+pg_restore -U tacitus -h localhost -d tacitus tacitus_20260101.dump
+```
+
+В Docker Compose можно выполнить бэкап из контейнера:
+
+```bash
+docker compose exec postgres pg_dump -U tacitus -Fc tacitus > tacitus_backup.dump
+```
+
+Рекомендации:
+
+- Настройте ежедневные бэкапы через `cron` или инструмент оркестрации.
+- Храните бэкапы вне сервера приложения (S3, отдельный диск).
+- Проверяйте восстановление из бэкапа не реже раза в месяц.
+
 ### Выборочный запуск (теги)
 
 | Тег        | Что делает                                       |
@@ -336,6 +389,8 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 ```bash
 TACITUS_JWT_SECRET=<strong-random-secret>
+TACITUS_DATABASE_URL=postgresql+asyncpg://tacitus:<password>@postgres:5432/tacitus
+TACITUS_RATE_LIMIT_STORAGE_URI=redis://redis:6379
 TACITUS_S3_ACCESS_KEY=<minio-access-key>
 TACITUS_S3_SECRET_KEY=<minio-secret-key>
 ```
@@ -343,3 +398,5 @@ TACITUS_S3_SECRET_KEY=<minio-secret-key>
 - Секреты хранить только в утверждённом secret manager (например переменные окружения хоста)
 - Никогда не коммитить `.env` (уже в `.gitignore`)
 - Не логировать секреты
+- `TACITUS_RATE_LIMIT_STORAGE_URI` должен указывать на Redis в production,
+  иначе лимиты не будут общими между инстансами
