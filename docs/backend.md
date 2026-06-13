@@ -58,6 +58,35 @@ app/
 - `get_current_user` получает `AsyncSession` и проверяет токен против таблицы
   `revoked_tokens` в БД
 
+## Скачивание файлов
+
+Endpoint `GET /files/{filename}` возвращает `FileUrlResponse`:
+
+```json
+{
+  "filename": "report.pdf",
+  "url": "https://minio.example.com/tacitus-files/report.pdf?X-Amz-Algorithm=..."
+}
+```
+
+Flow:
+
+1. Клиент отправляет запрос с заголовком `Authorization: Bearer <access_token>`.
+2. `get_current_user` проверяет подпись JWT и сверяет `jti` с таблицей
+   `revoked_tokens` в PostgreSQL.
+3. Имя файла санитизируется (`sanitize_filename`).
+4. `S3Service` проверяет существование объекта через `head_object` и генерирует
+   presigned URL с TTL, заданным в `TACITUS_PRESIGNED_URL_EXPIRATION`.
+5. Клиент выполняет `GET` по полученному URL напрямую к S3/MinIO для скачивания
+   файла.
+
+Ограничения:
+
+- Endpoint защищён JWT и rate-limited (30 запросов в минуту на пользователя).
+- Presigned URL не требует от клиента отдельных S3 credentials — он подписан
+  ключами приложения.
+- Если объект не найден в bucket, API возвращает `404 Not Found`.
+
 ## Rate limiting
 
 - Глобальный лимитер на базе `slowapi` + `limits`.
@@ -250,6 +279,7 @@ pip install -e ".[dev]"
 | `S3_ACCESS_KEY`             | `minioadmin`                       | S3 access key                                            |
 | `S3_SECRET_KEY`             | `minioadmin`                       | S3 secret key                                            |
 | `S3_BUCKET`                 | `tacitus-files`                    | Bucket для файлов                                        |
+| `PRESIGNED_URL_EXPIRATION`  | `300`                              | Время жизни presigned URL для скачивания (секунды)       |
 | `MTX_API_URL`               | `http://mediamtx:9997/v3`          | URL Control API MediaMTX                                 |
 | `MTX_RTSP_PORT`             | `8554`                             | Порт RTSP                                                |
 | `MTX_MAX_AGE_DAYS`          | `7`                                | Макс. возраст записей (для cleanup)                      |

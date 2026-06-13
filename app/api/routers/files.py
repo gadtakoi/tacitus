@@ -18,6 +18,7 @@ from app.schemas.stats import FileStat, S3StatsResponse
 from app.services.s3_service import (
     ALLOWED_TYPES,
     FORBIDDEN_EXTENSIONS,
+    S3FileNotFoundError,
     s3_service,
     sanitize_filename,
 )
@@ -145,12 +146,24 @@ async def get_stats(
 
 
 @router.get("/{filename}", response_model=FileUrlResponse)
+@limiter.limit("30/minute", key_func=get_user_or_ip)
 async def get_file_url(
     request: Request,
     filename: str,
     current_user: str = Depends(get_current_user),
 ) -> FileUrlResponse:
-    """Get presigned URL for file download.
+    """Return a presigned URL for downloading a file from S3/MinIO.
+
+    Authentication flow for S3 downloads:
+
+    1. ``get_current_user`` validates the JWT Bearer token, including a database
+       check against the revoked token blacklist.
+    2. The filename is sanitized to prevent path traversal and hidden-file
+       access.
+    3. ``S3Service`` verifies that the object exists and generates a short-lived
+       presigned URL signed with the application's S3 credentials.
+    4. The client downloads the file directly from S3/MinIO using the returned
+       URL; no additional client credentials are required.
 
     Args:
         request: FastAPI request object.
@@ -159,14 +172,29 @@ async def get_file_url(
 
     Returns:
         FileUrlResponse with presigned URL.
+
+    Raises:
+        HTTPException: 400 if the filename is invalid; 404 if the file does not
+            exist in S3; 429 if the rate limit is exceeded.
     """
     request_id = getattr(request.state, "request_id", "unknown")
     sanitized = _validate_filename(filename)
-    logger.info(
-        "Generating presigned URL",
-        extra={"request_id": request_id, "file_name": sanitized, "user": current_user},
+
+    client_ip = request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client else "unknown"
     )
-    url = s3_service.get_presigned_url(sanitized)
+    log_security_event(
+        "file.download",
+        ip=client_ip,
+        user=current_user,
+        extra={"request_id": request_id, "file_name": sanitized},
+    )
+
+    try:
+        url = s3_service.get_presigned_url(sanitized)
+    except S3FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+
     return FileUrlResponse(filename=sanitized, url=url)
 
 

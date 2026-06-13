@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     s3_access_key: str = Field(default="minioadmin", min_length=8)
     s3_secret_key: str = Field(default="minioadmin", min_length=8)
     s3_bucket: str = "tacitus-files"
+    presigned_url_expiration: int = Field(
+        default=300,
+        ge=60,
+        le=86400,
+        description="Lifetime of presigned S3/MinIO download URLs in seconds. "
+        "Short-lived URLs reduce exposure if a link is leaked.",
+    )
 
     jwt_secret: str = Field(default="dev-jwt-secret-change-me")
     jwt_algorithm: str = "HS256"

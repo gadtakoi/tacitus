@@ -54,6 +54,47 @@ async def test_get_file_url(mock_s3: MagicMock, client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
+async def test_get_file_url_unauthorized(client: AsyncClient) -> None:
+    """Missing JWT must be rejected with 401."""
+    response = await client.get("/files/test.txt")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+@patch("app.api.routers.files.s3_service")
+async def test_get_file_url_not_found(mock_s3: MagicMock, client: AsyncClient) -> None:
+    """Non-existent file must return 404."""
+    from app.services.s3_service import S3FileNotFoundError
+
+    mock_s3.get_presigned_url.side_effect = S3FileNotFoundError("missing.txt")
+    token = await _get_token(client)
+    response = await client.get("/files/missing.txt", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+@patch("app.api.routers.files.s3_service")
+async def test_get_file_url_rate_limit(mock_s3: MagicMock, client: AsyncClient) -> None:
+    """More than 30 download requests per minute per user returns 429."""
+    mock_s3.get_presigned_url.return_value = "http://example.com/url"
+    token = await _get_token(client)
+    for _ in range(30):
+        response = await client.get(
+            "/files/test.txt",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+    response = await client.get(
+        "/files/test.txt",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 429
+    assert response.json()["error"] == "Rate limit exceeded"
+
+
+@pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_delete_file(mock_s3: MagicMock, client: AsyncClient) -> None:
     token = await _get_token(client)

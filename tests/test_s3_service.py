@@ -47,6 +47,40 @@ def test_get_presigned_url(mock_client: MagicMock, s3_service: S3Service) -> Non
     mock_client.return_value.generate_presigned_url.return_value = "http://example.com/url"
     url = s3_service.get_presigned_url("test.txt")
     assert url == "http://example.com/url"
+    mock_client.return_value.head_object.assert_called_once_with(
+        Bucket="tacitus-files",
+        Key="test.txt",
+    )
+    mock_client.return_value.generate_presigned_url.assert_called_once_with(
+        "get_object",
+        Params={"Bucket": "tacitus-files", "Key": "test.txt"},
+        ExpiresIn=300,
+    )
+
+
+@patch("app.services.s3_service.boto3.client")
+def test_get_presigned_url_custom_expiration(mock_client: MagicMock, s3_service: S3Service) -> None:
+    mock_client.return_value.generate_presigned_url.return_value = "http://example.com/url"
+    url = s3_service.get_presigned_url("test.txt", expiration=600)
+    assert url == "http://example.com/url"
+    mock_client.return_value.generate_presigned_url.assert_called_once_with(
+        "get_object",
+        Params={"Bucket": "tacitus-files", "Key": "test.txt"},
+        ExpiresIn=600,
+    )
+
+
+@patch("app.services.s3_service.boto3.client")
+def test_get_presigned_url_file_not_found(mock_client: MagicMock, s3_service: S3Service) -> None:
+    from botocore.exceptions import ClientError
+
+    error_response = {"Error": {"Code": "404", "Message": "Not Found"}}
+    mock_client.return_value.head_object.side_effect = ClientError(error_response, "HeadObject")
+
+    from app.services.s3_service import S3FileNotFoundError
+
+    with pytest.raises(S3FileNotFoundError):
+        s3_service.get_presigned_url("missing.txt")
 
 
 @patch("app.services.s3_service.boto3.client")

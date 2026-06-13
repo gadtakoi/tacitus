@@ -33,12 +33,13 @@ Nginx добавляет следующие security headers ко всем от�
 Установлен `slowapi` + `limits`. Ключ rate-limit формируется как
 `user:<sub>` для авторизованных запросов и `ip:<client_ip>` для анонимных.
 
-| Endpoint              | Лимит  | Ключ         |
-|-----------------------|--------|--------------|
-| `POST /auth/login`    | 5/мин  | IP           |
-| `POST /auth/register` | 3/час  | IP           |
-| `POST /files/upload`  | 10/мин | пользователь |
-| `GET /files/`         | 60/мин | пользователь |
+| Endpoint              | Лимит   | Ключ         |
+|-----------------------|---------|--------------|
+| `POST /auth/login`    | 5/мин   | IP           |
+| `POST /auth/register` | 3/час   | IP           |
+| `POST /files/upload`  | 10/мин  | пользователь |
+| `GET /files/`         | 60/мин  | пользователь |
+| `GET /files/{filename}` | 30/мин | пользователь |
 
 При превышении возвращается `429 Too Many Requests`.
 
@@ -80,7 +81,48 @@ Nginx добавляет следующие security headers ко всем от�
   с помощью PostgreSQL upsert (`ON CONFLICT DO NOTHING`) для идемпотентности.
 - `decode_access_token()` проверяет `revoked_tokens` в БД перед валидацией.
 
-### 2.5 Startup Secret Validation
+### 2.5 S3/MinIO Download Authentication
+
+Скачивание файлов из S3/MinIO происходит в два этапа:
+
+1. **JWT-protected API:** клиент вызывает `GET /files/{filename}` с Bearer
+   access token. Токен проверяется подписью и сверяется с чёрным списком
+   `revoked_tokens` в PostgreSQL.
+2. **Presigned URL:** после успешной аутентификации бэкенд генерирует
+   краткосрочную подписанную ссылку через boto3 (`generate_presigned_url`) и
+   возвращает её клиенту. Клиент скачивает файл напрямую из S3/MinIO по этой
+   ссылке.
+
+```text
+Client  -->  GET /files/{filename} (Bearer JWT)  -->  FastAPI
+FastAPI -->  FileUrlResponse { url }              -->  Client
+Client  -->  GET <presigned URL>                  -->  S3/MinIO
+```
+
+| Параметр | Значение | Описание |
+|----------|----------|----------|
+| Endpoint | `GET /files/{filename}` | Требует валидный access token |
+| Rate limit | 30/минуту | На пользователя (JWT `sub`) |
+| Presigned URL TTL | `TACITUS_PRESIGNED_URL_EXPIRATION` (default 300 сек) | Время жизни прямой ссылки |
+| Auth на presigned URL | Подпись S3 credentials приложения | Клиент не предъявляет отдельных ключей |
+
+Почему presigned URL считается безопасным:
+
+- Ссылка **уникальна** и криптографически подписана — её невозможно подделать
+  без секрета приложения.
+- Срок действия **ограничен** (по умолчанию 5 минут), поэтому утечка ссылки
+  раскрывает файл только на короткое время.
+- Перед генерацией URL выполняется `head_object`, чтобы не выдавать ссылки на
+  несуществующие файлы.
+
+Production-рекомендации:
+
+- Bucket policy должна **запрещать публичный доступ** ко всем объектам.
+- MinIO Console (порт 9001) **не должен быть exposed наружу**.
+- Значение `TACITUS_PRESIGNED_URL_EXPIRATION` должно быть минимально
+  достаточным для скачивания файла клиентом.
+
+### 2.6 Startup Secret Validation
 
 При `TACITUS_ENVIRONMENT=production` приложение падает с `RuntimeError`, если:
 
@@ -177,6 +219,7 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 | `auth.register`       | info     | ip, user                  |
 | `auth.token.revoked`  | info     | ip, user                  |
 | `file.upload`         | info     | ip, user, file_name, size |
+| `file.download`       | info     | ip, user, file_name       |
 | `file.delete`         | info     | ip, user, file_name       |
 | `rate_limit.exceeded` | warning  | ip, endpoint              |
 

@@ -13,6 +13,15 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class S3FileNotFoundError(Exception):
+    """Raised when the requested object does not exist in the S3 bucket.
+
+    This exception is converted to an HTTP 404 by the API layer so the service
+    stays transport-agnostic.
+    """
+
+
 ALLOWED_TYPES: dict[str, set[str]] = {
     "image/jpeg": {".jpg", ".jpeg"},
     "image/png": {".png"},
@@ -146,28 +155,67 @@ class S3Service:
             logger.error("Failed to upload file", extra={"file_name": filename, "error": str(e)})
             raise
 
-    def get_presigned_url(self, filename: str, expiration: int = 3600) -> str:
-        """Generate presigned URL for file download.
+    def get_presigned_url(self, filename: str, expiration: int | None = None) -> str:
+        """Generate a time-limited presigned URL for downloading an object.
+
+        Authentication model for S3 downloads:
+
+        1. The caller (``GET /files/{filename}``) MUST authenticate the user
+           via JWT before invoking this method.
+        2. The presigned URL itself is signed with the application's S3
+           credentials and is valid only for a short, configurable period
+           (default: ``settings.presigned_url_expiration``). It does not require
+           the client to present separate S3 credentials.
+        3. Because the URL is unguessable and time-bound, sharing it outside the
+           authenticated session exposes the file only until the URL expires.
 
         Args:
             filename: Name of the file.
-            expiration: URL expiration time in seconds.
+            expiration: URL expiration time in seconds. When ``None`` (default),
+                ``settings.presigned_url_expiration`` is used.
 
         Returns:
             Presigned URL string.
+
+        Raises:
+            S3FileNotFoundError: If the object does not exist in the bucket.
+            ClientError: If S3 returns an unexpected error.
         """
         sanitized = sanitize_filename(filename)
+        if expiration is None:
+            expiration = settings.presigned_url_expiration
+
+        client = self._get_client()
         try:
-            url = self._get_client().generate_presigned_url(
+            # Verify the object exists before handing out a presigned URL.
+            # This avoids leaking signed URLs for non-existent files and lets
+            # the API return a clean 404.
+            client.head_object(Bucket=self.bucket, Key=sanitized)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code")
+            if error_code in ("404", "NoSuchKey"):
+                logger.warning(
+                    "Requested file not found in S3",
+                    extra={"file_name": sanitized, "bucket": self.bucket},
+                )
+                raise S3FileNotFoundError(sanitized) from exc
+            logger.error(
+                "Failed to check file existence",
+                extra={"file_name": sanitized, "error": str(exc)},
+            )
+            raise
+
+        try:
+            url = client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket, "Key": sanitized},
                 ExpiresIn=expiration,
             )
             return url
-        except ClientError as e:
+        except ClientError as exc:
             logger.error(
                 "Failed to generate presigned URL",
-                extra={"file_name": filename, "error": str(e)},
+                extra={"file_name": sanitized, "error": str(exc)},
             )
             raise
 
