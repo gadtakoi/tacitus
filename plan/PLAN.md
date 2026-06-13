@@ -28,15 +28,15 @@
 ## 1. Аудит текущих in-memory хранилищ
 
 - [x] Составить карту всех in-memory структур данных в проекте:
-  - `app/services/auth_service.py`: `_users`, `_refresh_tokens`,
-    `_token_blacklist`, `_failed_attempts`.
-  - `app/core/security_logging.py`: `_responses` (подозрительная активность).
-  - `app/core/rate_limit.py`: `MemoryStorage` через `slowapi`/`limits`.
+    - `app/services/auth_service.py`: `_users`, `_refresh_tokens`,
+      `_token_blacklist`, `_failed_attempts`.
+    - `app/core/security_logging.py`: `_responses` (подозрительная активность).
+    - `app/core/rate_limit.py`: `MemoryStorage` через `slowapi`/`limits`.
 - [x] Зафиксировать для каждой структуры:
-  - ключи/сущности,
-  - сроки жизни данных,
-  - требования к консистентности и атомарности,
-  - частоту чтения/записи.
+    - ключи/сущности,
+    - сроки жизни данных,
+    - требования к консистентности и атомарности,
+    - частоту чтения/записи.
 - [x] Определить, какие данные идут в PostgreSQL, а какие (при необходимости)
   могут остаться во внешнем хранилище (Redis/Memcached) для rate-limiting.
 - [x] Зафиксировать результаты аудита в виде краткой сводки в комментарии к
@@ -48,43 +48,43 @@
 ## 2. Подготовка инфраструктуры и конфигурации
 
 - [x] Добавить переменные окружения для PostgreSQL в `.env.example`:
-  - `TACITUS_DATABASE_URL` (или раздельные `POSTGRES_USER`, `POSTGRES_PASSWORD`,
-    `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`).
-  - Дополнительно добавлена `TACITUS_RATE_LIMIT_STORAGE_URI` с разъяснением
-    возможных backend'ов.
+    - `TACITUS_DATABASE_URL` (или раздельные `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+      `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`).
+    - Дополнительно добавлена `TACITUS_RATE_LIMIT_STORAGE_URI` с разъяснением
+      возможных backend'ов.
 - [x] Проверить `docker-compose.yml`:
-  - сервис `postgres` уже присутствует и использует healthcheck,
-  - сервис `db-migrations` запускает `alembic upgrade head`,
-  - сервис `app` дожидается миграций.
+    - сервис `postgres` уже присутствует и использует healthcheck,
+    - сервис `db-migrations` запускает `alembic upgrade head`,
+    - сервис `app` дожидается миграций.
 - [x] Убедиться, что `app/core/config.py` корректно читает `database_url` и
   формирует URL при использовании отдельных переменных.
-  - Добавлено поле `rate_limit_storage_uri` с дефолтом `memory://`.
+    - Добавлено поле `rate_limit_storage_uri` с дефолтом `memory://`.
 - [x] Проверить актуальность `pyproject.toml` и при необходимости обновить
   `requirements.txt` (должны присутствовать `sqlalchemy[asyncio]`, `asyncpg`,
   `alembic`, а также `limits`/`slowapi` с нужным storage backend).
-  - `requirements.txt` перегенерирован через `pip-compile`; теперь включает
-    `alembic`, `asyncpg`, `sqlalchemy`, `slowapi`, `limits`.
+    - `requirements.txt` перегенерирован через `pip-compile`; теперь включает
+      `alembic`, `asyncpg`, `sqlalchemy`, `slowapi`, `limits`.
 - [x] Добавить в `docker-compose.yml` для сервиса `app` переменные
   `TACITUS_DATABASE_URL` / `POSTGRES_*`, если они там ещё не прописаны.
-  - В environment сервиса `app` добавлены `TACITUS_DATABASE_URL` и
-    `TACITUS_RATE_LIMIT_STORAGE_URI`.
+    - В environment сервиса `app` добавлены `TACITUS_DATABASE_URL` и
+      `TACITUS_RATE_LIMIT_STORAGE_URI`.
 
 ---
 
 ## 3. Проектирование схемы базы данных
 
 - [x] Определить набор таблиц, необходимых для замены in-memory хранилищ:
-  - `users` — учётные записи и хеши паролей.
-  - `refresh_tokens` — выпущенные refresh-токены с TTL и привязкой к пользователю.
-  - `revoked_tokens` — отозванные access-токены (blacklist) до истечения TTL.
-  - `failed_login_attempts` — неудачные попытки входа для защиты от brute-force.
-  - `security_events` — подозрительная активность и прочие security-события.
+    - `users` — учётные записи и хеши паролей.
+    - `refresh_tokens` — выпущенные refresh-токены с TTL и привязкой к пользователю.
+    - `revoked_tokens` — отозванные access-токены (blacklist) до истечения TTL.
+    - `failed_login_attempts` — неудачные попытки входа для защиты от brute-force.
+    - `security_events` — подозрительная активность и прочие security-события.
 - [x] Спроектировать индексы:
-  - уникальный индекс на `users.username`,
-  - индекс на `refresh_tokens.token_hash` (или `jti`),
-  - индекс на `revoked_tokens.jti` с частичным/уникальным ограничением,
-  - индекс на `failed_login_attempts.username` + `created_at`,
-  - индекс на `security_events.ip_address` + `created_at`.
+    - уникальный индекс на `users.username`,
+    - индекс на `refresh_tokens.token_hash` (или `jti`),
+    - индекс на `revoked_tokens.jti` с частичным/уникальным ограничением,
+    - индекс на `failed_login_attempts.username` + `created_at`,
+    - индекс на `security_events.ip_address` + `created_at`.
 - [x] Зафиксировать схему в документе `docs/backend.md` (раздел
   "Схема базы данных").
 
@@ -93,14 +93,14 @@
 ## 4. Реализация SQLAlchemy моделей
 
 - [x] В `app/db/models.py` реализовать модели:
-  - `User` с полями `id`, `username`, `password_hash`, `is_active`,
-    `created_at`, `updated_at`.
-  - `RefreshToken` с полями `id`, `user_id`, `token_hash`/`jti`, `expires_at`,
-    `created_at`, `revoked_at`.
-  - `RevokedToken` с полями `id`, `jti`, `expires_at`, `revoked_at`.
-  - `FailedLoginAttempt` с полями `id`, `username`, `ip_address`, `created_at`.
-  - `SecurityEvent` с полями `id`, `event_type`, `ip_address`, `username`,
-    `details`, `created_at`.
+    - `User` с полями `id`, `username`, `password_hash`, `is_active`,
+      `created_at`, `updated_at`.
+    - `RefreshToken` с полями `id`, `user_id`, `token_hash`/`jti`, `expires_at`,
+      `created_at`, `revoked_at`.
+    - `RevokedToken` с полями `id`, `jti`, `expires_at`, `revoked_at`.
+    - `FailedLoginAttempt` с полями `id`, `username`, `ip_address`, `created_at`.
+    - `SecurityEvent` с полями `id`, `event_type`, `ip_address`, `username`,
+      `details`, `created_at`.
 - [x] Убедиться, что все модели наследуются от общего `Base` и корректно
   регистрируются в метаданных.
 - [x] Добавить типизацию колонок, ограничения (`nullable`, `unique`) и
@@ -115,28 +115,28 @@
 ## 5. Создание репозиториев для работы с БД
 
 - [x] В `app/db/repositories/` создать (или расширить) репозитории:
-  - `UserRepository` — CRUD и поиск пользователя по username.
-  - `RefreshTokenRepository` — создание, поиск, отзыв, очистка протухших.
-  - `TokenBlacklistRepository` — добавление JTI в blacklist, проверка наличия.
-  - `FailedLoginAttemptRepository` — запись попытки, подсчёт за окно,
-    очистка старых записей.
-  - `SecurityEventRepository` — запись события, подсчёт за окно, очистка.
+    - `UserRepository` — CRUD и поиск пользователя по username.
+    - `RefreshTokenRepository` — создание, поиск, отзыв, очистка протухших.
+    - `TokenBlacklistRepository` — добавление JTI в blacklist, проверка наличия.
+    - `FailedLoginAttemptRepository` — запись попытки, подсчёт за окно,
+      очистка старых записей.
+    - `SecurityEventRepository` — запись события, подсчёт за окно, очистка.
 - [x] Использовать протоколы (typing.Protocol) или абстрактные базовые классы
   для репозиториев, чтобы упростить будущее unit-тестирование.
-  - Создан `app/db/repositories/base.py` с `RepositoryError` и `BaseRepository`.
+    - Создан `app/db/repositories/base.py` с `RepositoryError` и `BaseRepository`.
 - [x] Каждый метод репозитория должен:
-  - принимать `AsyncSession`,
-  - выполнять один запрос и возвращать результат,
-  - содержать docstring с описанием аргументов, возвращаемого значения и
-    возможных исключений.
+    - принимать `AsyncSession`,
+    - выполнять один запрос и возвращать результат,
+    - содержать docstring с описанием аргументов, возвращаемого значения и
+      возможных исключений.
 - [x] Добавить обработку `IntegrityError` и преобразование её в понятные
   бизнес-исключения.
-  - `UserRepository.create` преобразует `IntegrityError` в
-    `AuthRepositoryError` при дублировании username.
-  - `RefreshTokenRepository.create` преобразует `IntegrityError` при
-    дублировании token hash.
-  - `TokenBlacklistRepository.add` использует PostgreSQL upsert
-    (`ON CONFLICT DO NOTHING`) для идемпотентности.
+    - `UserRepository.create` преобразует `IntegrityError` в
+      `AuthRepositoryError` при дублировании username.
+    - `RefreshTokenRepository.create` преобразует `IntegrityError` при
+      дублировании token hash.
+    - `TokenBlacklistRepository.add` использует PostgreSQL upsert
+      (`ON CONFLICT DO NOTHING`) для идемпотентности.
 
 ---
 
@@ -144,18 +144,18 @@
 
 - [x] Сгенерировать новую миграцию командой `alembic revision --autogenerate -m
   "add auth and security tables"`.
-  - Вручную создан файл миграции
-    `migrations/versions/3f19f0b8199b_add_auth_and_security_tables.py`,
-    поскольку в текущем окружении недоступен Docker/PostgreSQL для autogenerate.
+    - Вручную создан файл миграции
+      `migrations/versions/3f19f0b8199b_add_auth_and_security_tables.py`,
+      поскольку в текущем окружении недоступен Docker/PostgreSQL для autogenerate.
 - [x] Вручную проверить сгенерированный скрипт миграции:
-  - корректность типов колонок,
-  - наличие необходимых индексов,
-  - корректность `upgrade()` и `downgrade()`.
+    - корректность типов колонок,
+    - наличие необходимых индексов,
+    - корректность `upgrade()` и `downgrade()`.
 - [x] Протестировать миграцию в чистом окружении (offline SQL):
-  - `alembic upgrade head --sql` — SQL для upgrade сгенерирован корректно,
-  - `alembic downgrade 3f19f0b8199b:64327e575f70 --sql` — SQL для downgrade
-    сгенерирован корректно,
-  - повторный upgrade проверен тем же способом.
+    - `alembic upgrade head --sql` — SQL для upgrade сгенерирован корректно,
+    - `alembic downgrade 3f19f0b8199b:64327e575f70 --sql` — SQL для downgrade
+      сгенерирован корректно,
+    - повторный upgrade проверен тем же способом.
 - [x] Добавить комментарии внутри файла миграции, поясняющие назначение каждой
   таблицы и индекса.
 - [x] Задокументировать команду для применения миграций в `docs/deployment.md`.
@@ -165,25 +165,25 @@
 ## 7. Рефакторинг `app/services/auth_service.py`
 
 - [x] Удалить (или заменить) модульные переменные:
-  - `_users` → `UserRepository`,
-  - `_refresh_tokens` → `RefreshTokenRepository`,
-  - `_token_blacklist` → `TokenBlacklistRepository`,
-  - `_failed_attempts` → `FailedLoginAttemptRepository`.
+    - `_users` → `UserRepository`,
+    - `_refresh_tokens` → `RefreshTokenRepository`,
+    - `_token_blacklist` → `TokenBlacklistRepository`,
+    - `_failed_attempts` → `FailedLoginAttemptRepository`.
 - [x] Переписать функции так, чтобы они принимали `AsyncSession` (через
   `Depends(get_db_session)` на уровне router/dependencies или явно в сервисе).
-  - Все функции сервиса теперь принимают `AsyncSession` первым аргументом.
+    - Все функции сервиса теперь принимают `AsyncSession` первым аргументом.
 - [x] Сохранить существующую бизнес-логику:
-  - регистрация пользователя с хешированием пароля,
-  - логин с проверкой пароля,
-  - brute-force защита (5 неудачных попыток в 15 минут),
-  - генерация access/refresh токенов,
-  - отзыв токенов и проверка blacklist,
-  - обновление access-токена по refresh-токену.
+    - регистрация пользователя с хешированием пароля,
+    - логин с проверкой пароля,
+    - brute-force защита (5 неудачных попыток в 15 минут),
+    - генерация access/refresh токенов,
+    - отзыв токенов и проверка blacklist,
+    - обновление access-токена по refresh-токену.
 - [x] Добавить периодическую очистку протухших refresh-токенов и старых записей
   `failed_login_attempts` (например, при каждой записи или отдельным
   фоновым/периодическим вызовом).
-  - `store_refresh_token` вызывает `cleanup_expired()` после сохранения.
-  - `record_failed_login` вызывает `cleanup_old()` после записи.
+    - `store_refresh_token` вызывает `cleanup_expired()` после сохранения.
+    - `record_failed_login` вызывает `cleanup_old()` после записи.
 - [x] Добавить обработку ошибок БД (`IntegrityError`, `DBAPIError`) и
   преобразование их в `AppError`.
 - [x] Покрыть все публичные функции docstring и комментариями.
@@ -199,8 +199,8 @@
   подсчёт событий за заданное окно (5 минут) для IP-адреса.
 - [x] Добавить фоновую/периодическую очистку старых security-событий,
   чтобы таблица не росла неограниченно.
-  - Cleanup запускается примерно каждые 100 событий; удаляются записи
-    старше 7 дней.
+    - Cleanup запускается примерно каждые 100 событий; удаляются записи
+      старше 7 дней.
 - [x] Добавить docstring к middleware и вспомогательным методам.
 - [x] Обновить `docs/security.md` с описанием нового механизма.
 
@@ -209,15 +209,15 @@
 ## 9. Рефакторинг `app/core/rate_limit.py`
 
 - [x] Выбрать backend для `slowapi`/`limits`:
-  - Redis (`redis://...`) — единственный поддерживаемый `limits` распределённый
-    backend; PostgreSQL не поддерживается как storage URI.
+    - Redis (`redis://...`) — единственный поддерживаемый `limits` распределённый
+      backend; PostgreSQL не поддерживается как storage URI.
 - [x] Настроить `storage_uri` через переменные окружения
   (`TACITUS_RATE_LIMIT_STORAGE_URI`).
-  - Для разработки: `memory://` (default).
-  - Для production / multi-instance: `redis://host:port`.
+    - Для разработки: `memory://` (default).
+    - Для production / multi-instance: `redis://host:port`.
 - [x] Обновить инициализацию `Limiter`:
-  - передать `storage_uri` в конструктор `Limiter`,
-  - key_func — `get_user_or_ip` (предпочитает JWT `sub`, fallback к IP).
+    - передать `storage_uri` в конструктор `Limiter`,
+    - key_func — `get_user_or_ip` (предпочитает JWT `sub`, fallback к IP).
 - [x] Убедиться, что rate-limit работает корректно при перезапуске приложения и
   при нескольких инстансах (данные хранятся вне процесса).
 - [x] Обновить `tests/conftest.py`: `_reset_limiter_state()` очищает
@@ -236,8 +236,8 @@
 - [x] В `app/api/dependencies.py` убедиться, что `get_current_user` получает
   `AsyncSession` и передаёт её в `auth_service`.
 - [x] Обновить `app/api/routers/auth.py`:
-  - все endpoint'ы используют `Depends(get_db_session)`,
-  - вызовы `auth_service` содержат сессию.
+    - все endpoint'ы используют `Depends(get_db_session)`,
+    - вызовы `auth_service` содержат сессию.
 - [x] Проверить остальные роутеры (`files.py`, `streams.py`, `hello.py`) на
   предмет неявного использования auth-зависимостей; при необходимости обновить
   вызовы.
@@ -251,10 +251,10 @@
 
 - [x] В `tests/conftest.py` заменить ручную очистку in-memory словарей на
   фикстуры для работы с БД:
-  - фикстура `async_engine`, создающая тестовое подключение,
-  - фикстура `db_session`, открывающая транзакцию и откатывающая её после
-    теста,
-  - фикстура `client`, переопределяющая `get_db_session` для тестов.
+    - фикстура `async_engine`, создающая тестовое подключение,
+    - фикстура `db_session`, открывающая транзакцию и откатывающая её после
+      теста,
+    - фикстура `client`, переопределяющая `get_db_session` для тестов.
 - [x] Убрать прямой доступ к `auth_service._users`, `_refresh_tokens`,
   `_token_blacklist`, `_failed_attempts` в тестах.
 - [x] Обновить `tests/test_auth.py`: использовать репозитории или API для
@@ -272,30 +272,30 @@
 ## 12. Обновление документации
 
 - [x] `docs/backend.md`:
-  - обновить раздел "Аутентификация" (убрать упоминание in-memory),
-  - добавить раздел "Схема базы данных" с описанием таблиц и связей,
-  - добавить раздел "Репозитории" с описанием слоя доступа к данным,
-  - обновить таблицу переменных окружения (добавить `DATABASE_URL` и
-    `RATE_LIMIT_STORAGE_URI`).
+    - обновить раздел "Аутентификация" (убрать упоминание in-memory),
+    - добавить раздел "Схема базы данных" с описанием таблиц и связей,
+    - добавить раздел "Репозитории" с описанием слоя доступа к данным,
+    - обновить таблицу переменных окружения (добавить `DATABASE_URL` и
+      `RATE_LIMIT_STORAGE_URI`).
 - [x] `docs/security.md`:
-  - обновить описание хранения паролей и токенов,
-  - обновить механизм brute-force защиты,
-  - обновить логику подозрительной активности,
-  - обновить rate-limiting.
+    - обновить описание хранения паролей и токенов,
+    - обновить механизм brute-force защиты,
+    - обновить логику подозрительной активности,
+    - обновить rate-limiting.
 - [x] `docs/deployment.md`:
-  - добавить инструкции по настройке PostgreSQL,
-  - описать применение миграций (`alembic upgrade head`),
-  - добавить рекомендации по резервному копированию БД,
-  - обновить переменные окружения.
+    - добавить инструкции по настройке PostgreSQL,
+    - описать применение миграций (`alembic upgrade head`),
+    - добавить рекомендации по резервному копированию БД,
+    - обновить переменные окружения.
 - [x] `.env.example`:
-  - добавить `TACITUS_DATABASE_URL`,
-  - добавить `TACITUS_RATE_LIMIT_STORAGE_URI` (если выбран отдельный backend),
-  - добавить комментарии к новым переменным.
+    - добавить `TACITUS_DATABASE_URL`,
+    - добавить `TACITUS_RATE_LIMIT_STORAGE_URI` (если выбран отдельный backend),
+    - добавить комментарии к новым переменным.
 - [x] `plan/DECISIONS.md`:
-  - добавить ADR-010 "Переход на PostgreSQL для хранения состояния приложения"
-    или обновить ADR-006, отметив его как "Заменено ADR-010".
+    - добавить ADR-010 "Переход на PostgreSQL для хранения состояния приложения"
+      или обновить ADR-006, отметив его как "Заменено ADR-010".
 - [x] `README.md` (если есть ссылки на in-memory хранилище):
-  - обновить общее описание архитектуры и стека.
+    - обновить общее описание архитектуры и стека.
 
 ---
 
@@ -307,11 +307,11 @@
   статусом `0`.
 - [x] Запустить полный набор тестов: `pytest`.
 - [x] Проверить основной сценарий аутентификации:
-  - регистрация,
-  - логин,
-  - доступ к защищённым endpoint'ам,
-  - logout / revoke token,
-  - refresh token flow.
+    - регистрация,
+    - логин,
+    - доступ к защищённым endpoint'ам,
+    - logout / revoke token,
+    - refresh token flow.
 - [x] Проверить brute-force защиту: 5 неудачных попыток блокируют вход на
   15 минут.
 - [x] Проверить rate limiting: лимиты сохраняются после перезапуска сервиса
@@ -319,9 +319,9 @@
 - [x] Проверить security logging: множественные 401/403 от одного IP
   фиксируются в БД и инициируют предупреждение.
 - [x] Проверить работу миграций с нуля:
-  - удалить volume `postgres-data`,
-  - запустить `docker compose up -d`,
-  - убедиться, что все таблицы созданы.
+    - удалить volume `postgres-data`,
+    - запустить `docker compose up -d`,
+    - убедиться, что все таблицы созданы.
 - [x] Проверить `alembic downgrade -1` и повторный `alembic upgrade head` на
   тестовой БД.
 
@@ -352,19 +352,20 @@
 
 ### 1.1 Перечень in-memory хранилищ
 
-| Файл | Переменная/объект | Тип | Назначение |
-|------|-------------------|-----|------------|
-| `app/services/auth_service.py:19` | `_users` | `dict[str, dict[str, Any]]` | Реестр пользователей: `username` → `{username, hashed_password}`. |
-| `app/services/auth_service.py:23` | `_failed_attempts` | `dict[str, list[datetime]]` | Счётчик неудачных входов по `username` для brute-force защиты. |
-| `app/services/auth_service.py:29` | `_token_blacklist` | `set[str]` | Множество отозванных access-токенов. |
-| `app/services/auth_service.py:33` | `_refresh_tokens` | `dict[str, dict[str, Any]]` | Хранилище refresh-токенов: `token` → `{sub, exp}`. |
-| `app/core/security_logging.py:51` | `SuspiciousActivityMiddleware._responses` | `dict[str, list[datetime]]` | Накопление 401/403 ответов по IP для детекции атак. |
-| `app/core/rate_limit.py:26` | `limiter` | `slowapi.Limiter` | Rate limiting; по умолчанию использует `MemoryStorage`. |
-| `tests/conftest.py:23-27` | `reset_global_state` | fixture | Сбрасывает все in-memory хранилища между тестами. |
+| Файл                              | Переменная/объект                         | Тип                         | Назначение                                                        |
+|-----------------------------------|-------------------------------------------|-----------------------------|-------------------------------------------------------------------|
+| `app/services/auth_service.py:19` | `_users`                                  | `dict[str, dict[str, Any]]` | Реестр пользователей: `username` → `{username, hashed_password}`. |
+| `app/services/auth_service.py:23` | `_failed_attempts`                        | `dict[str, list[datetime]]` | Счётчик неудачных входов по `username` для brute-force защиты.    |
+| `app/services/auth_service.py:29` | `_token_blacklist`                        | `set[str]`                  | Множество отозванных access-токенов.                              |
+| `app/services/auth_service.py:33` | `_refresh_tokens`                         | `dict[str, dict[str, Any]]` | Хранилище refresh-токенов: `token` → `{sub, exp}`.                |
+| `app/core/security_logging.py:51` | `SuspiciousActivityMiddleware._responses` | `dict[str, list[datetime]]` | Накопление 401/403 ответов по IP для детекции атак.               |
+| `app/core/rate_limit.py:26`       | `limiter`                                 | `slowapi.Limiter`           | Rate limiting; по умолчанию использует `MemoryStorage`.           |
+| `tests/conftest.py:23-27`         | `reset_global_state`                      | fixture                     | Сбрасывает все in-memory хранилища между тестами.                 |
 
 ### 1.2 Контракты и требования
 
 #### `_users`
+
 - **Ключ:** `username` (регистрозависимый, уникальный).
 - **Значение:** `{"username": str, "hashed_password": str}`.
 - **Операции:** чтение при логине/аутентификации; запись при регистрации.
@@ -374,6 +375,7 @@
 - **Миграция:** таблица `users` в PostgreSQL.
 
 #### `_failed_attempts`
+
 - **Ключ:** `username`.
 - **Значение:** список `datetime` неудачных попыток входа.
 - **Логика:** `is_brute_force_locked()` считает попытки за окно
@@ -386,6 +388,7 @@
   периодическая очистка записей старше 15 минут.
 
 #### `_token_blacklist`
+
 - **Элемент:** строка access-токена целиком.
 - **Операции:** запись при logout; чтение при каждой валидации токена.
 - **Срок жизни:** до истечения TTL access-токена (по умолчанию 15 минут).
@@ -395,6 +398,7 @@
   использование `jti` из payload.
 
 #### `_refresh_tokens`
+
 - **Ключ:** строка refresh-токена.
 - **Значение:** `{"sub": username, "exp": datetime}`.
 - **Операции:** запись при выпуске; чтение при refresh; удаление при logout.
@@ -404,6 +408,7 @@
 - **Миграция:** таблица `refresh_tokens` с внешним ключом на `users`.
 
 #### `SuspiciousActivityMiddleware._responses`
+
 - **Ключ:** IP-адрес клиента.
 - **Значение:** список `datetime` 401/403 ответов.
 - **Логика:** окно 5 минут, порог 100 событий; при превышении логируется
@@ -414,26 +419,27 @@
   SQL-запрос `COUNT(*) WHERE ip = ? AND created_at > now() - interval '5 min'`.
 
 #### `limiter` (rate limiting)
+
 - **Backend:** `limits.storage.MemoryStorage` по умолчанию.
 - **Ключ:** клиентский IP (текущая конфигурация `key_func=get_client_ip`).
 - **Операции:** инкремент счётчика при каждом запросе; проверка лимита.
 - **Срок жизни:** зависит от декораторов/конфигурации лимитов.
 - **Миграция:** внешнее хранилище, совместимое с `limits`:
-  - **Вариант A:** Redis (`redis://...`) — предпочтителен для rate limiting.
-  - **Вариант B:** PostgreSQL через `limits` storage URI (если Redis недоступен).
-  - Рекомендуется вынести в переменную окружения
-    `TACITUS_RATE_LIMIT_STORAGE_URI`.
+    - **Вариант A:** Redis (`redis://...`) — предпочтителен для rate limiting.
+    - **Вариант B:** PostgreSQL через `limits` storage URI (если Redis недоступен).
+    - Рекомендуется вынести в переменную окружения
+      `TACITUS_RATE_LIMIT_STORAGE_URI`.
 
 ### 1.3 Решение по гранулярности миграции
 
-| In-memory структура | Целевое хранилище | Таблица/ключ | Примечание |
-|---------------------|-------------------|--------------|------------|
-| `_users` | PostgreSQL | `users` | Полная миграция; уникальность username. |
-| `_failed_attempts` | PostgreSQL | `failed_login_attempts` | Очистка старше 15 минут. |
-| `_token_blacklist` | PostgreSQL | `revoked_tokens` | Хранить `jti`, не полный токен. |
-| `_refresh_tokens` | PostgreSQL | `refresh_tokens` | Добавить `revoked_at`/`used_at`. |
-| `_responses` | PostgreSQL | `security_events` | Тип события `suspicious_activity`. |
-| `limiter` | Redis / PostgreSQL | `TACITUS_RATE_LIMIT_STORAGE_URI` | Зависит от инфраструктуры. |
+| In-memory структура | Целевое хранилище  | Таблица/ключ                     | Примечание                              |
+|---------------------|--------------------|----------------------------------|-----------------------------------------|
+| `_users`            | PostgreSQL         | `users`                          | Полная миграция; уникальность username. |
+| `_failed_attempts`  | PostgreSQL         | `failed_login_attempts`          | Очистка старше 15 минут.                |
+| `_token_blacklist`  | PostgreSQL         | `revoked_tokens`                 | Хранить `jti`, не полный токен.         |
+| `_refresh_tokens`   | PostgreSQL         | `refresh_tokens`                 | Добавить `revoked_at`/`used_at`.        |
+| `_responses`        | PostgreSQL         | `security_events`                | Тип события `suspicious_activity`.      |
+| `limiter`           | Redis / PostgreSQL | `TACITUS_RATE_LIMIT_STORAGE_URI` | Зависит от инфраструктуры.              |
 
 ---
 
