@@ -58,7 +58,7 @@ def init_sentry() -> None:
         traces_sample_rate=settings.sentry_traces_sample_rate,
         release="tacitus@0.1.0",
         integrations=[FastApiIntegration()],
-        before_send=_strip_sensitive_data,
+        before_send=_strip_sensitive_data,  # type: ignore[arg-type]
     )
     logger.info(
         "Sentry initialized",

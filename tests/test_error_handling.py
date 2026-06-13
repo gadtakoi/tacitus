@@ -15,7 +15,7 @@ async def test_generic_exception_handler_production() -> None:
     with patch("app.core.exceptions.settings.debug", False):
         response = await generic_exception_handler(request, ValueError("secret detail"))
     assert response.status_code == 500
-    body = response.body.decode()
+    body = bytes(response.body).decode()
     assert "Internal server error" in body
     assert "secret detail" not in body
 
@@ -28,5 +28,5 @@ async def test_generic_exception_handler_debug() -> None:
     with patch("app.core.exceptions.settings.debug", True):
         response = await generic_exception_handler(request, ValueError("secret detail"))
     assert response.status_code == 500
-    body = response.body.decode()
+    body = bytes(response.body).decode()
     assert "secret detail" in body

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -178,10 +179,10 @@ class RefreshTokenRepository(BaseRepository):
         if cutoff is None:
             cutoff = datetime.now(UTC)
         result = await self._session.execute(
-            RefreshToken.__table__.delete().where(RefreshToken.expires_at <= cutoff),
+            delete(RefreshToken).where(RefreshToken.expires_at <= cutoff),
         )
         await self._session.commit()
-        return result.rowcount
+        return cast(CursorResult[Any], result).rowcount
 
 
 class TokenBlacklistRepository(BaseRepository):
@@ -244,10 +245,10 @@ class TokenBlacklistRepository(BaseRepository):
         if cutoff is None:
             cutoff = datetime.now(UTC)
         result = await self._session.execute(
-            RevokedToken.__table__.delete().where(RevokedToken.expires_at <= cutoff),
+            delete(RevokedToken).where(RevokedToken.expires_at <= cutoff),
         )
         await self._session.commit()
-        return result.rowcount
+        return cast(CursorResult[Any], result).rowcount
 
 
 class FailedLoginAttemptRepository(BaseRepository):
@@ -298,12 +299,12 @@ class FailedLoginAttemptRepository(BaseRepository):
             Number of deleted records.
         """
         result = await self._session.execute(
-            FailedLoginAttempt.__table__.delete().where(
+            delete(FailedLoginAttempt).where(
                 FailedLoginAttempt.created_at <= cutoff,
             ),
         )
         await self._session.commit()
-        return result.rowcount
+        return cast(CursorResult[Any], result).rowcount
 
 
 class SecurityEventRepository(BaseRepository):
@@ -367,7 +368,7 @@ class SecurityEventRepository(BaseRepository):
             Number of deleted records.
         """
         result = await self._session.execute(
-            SecurityEvent.__table__.delete().where(SecurityEvent.created_at <= cutoff),
+            delete(SecurityEvent).where(SecurityEvent.created_at <= cutoff),
         )
         await self._session.commit()
-        return result.rowcount
+        return cast(CursorResult[Any], result).rowcount

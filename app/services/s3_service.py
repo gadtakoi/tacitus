@@ -3,7 +3,7 @@
 import logging
 import posixpath
 import re
-from typing import Any
+from typing import Any, TypedDict
 
 import boto3
 from botocore.client import Config
@@ -62,6 +62,23 @@ def sanitize_filename(filename: str) -> str:
     if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
         raise ValueError("Filename contains invalid characters")
     return filename
+
+
+class _LargestFileStat(TypedDict):
+    """Typed representation of the largest file returned by bucket stats."""
+
+    filename: str
+    size_bytes: int
+
+
+class _BucketStats(TypedDict):
+    """Typed representation of bucket statistics returned by S3Service."""
+
+    total_files: int
+    total_size_bytes: int
+    total_size_human: str
+    average_size_bytes: float
+    largest_file: _LargestFileStat | None
 
 
 class S3Service:
@@ -171,7 +188,7 @@ class S3Service:
             logger.error("Failed to delete file", extra={"file_name": filename, "error": str(e)})
             raise
 
-    def get_bucket_stats(self) -> dict[str, int | float | dict[str, int] | None]:
+    def get_bucket_stats(self) -> _BucketStats:
         """Return statistics for the S3 bucket.
 
         Returns:
@@ -200,7 +217,9 @@ class S3Service:
                 "total_size_bytes": total_size,
                 "total_size_human": _human_readable_size(total_size),
                 "average_size_bytes": average_size,
-                "largest_file": {"filename": largest["Key"], "size_bytes": largest["Size"]},
+                "largest_file": _LargestFileStat(
+                    filename=largest["Key"], size_bytes=largest["Size"]
+                ),
             }
         except ClientError as e:
             logger.error("Failed to get bucket stats", extra={"error": str(e)})

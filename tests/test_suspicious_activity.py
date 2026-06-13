@@ -6,6 +6,7 @@ Integration tests that hit the real database live in
 ``test_security_logging_integration.py``.
 """
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +15,7 @@ from app.core.security_logging import SuspiciousActivityMiddleware
 
 
 @pytest.fixture(autouse=True)
-def reset_event_counter() -> None:
+def reset_event_counter() -> Iterator[None]:
     """Reset the process-local event counter between tests."""
     SuspiciousActivityMiddleware._event_counter = 0
     yield

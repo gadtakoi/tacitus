@@ -255,7 +255,7 @@ async def store_refresh_token(session: AsyncSession, token: str, username: str) 
     if user is None:
         raise AuthError(f"User '{username}' not found")
 
-    payload = decode_refresh_token(token)
+    payload = await decode_refresh_token(token)
     if payload is None:
         raise AuthError("Invalid refresh token")
 

@@ -73,8 +73,10 @@ def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None
     assert stats["total_size_bytes"] == 1536
     assert stats["total_size_human"] == "1.5 KB"
     assert stats["average_size_bytes"] == 512.0
-    assert stats["largest_file"]["filename"] == "c.txt"
-    assert stats["largest_file"]["size_bytes"] == 768
+    largest = stats["largest_file"]
+    assert largest is not None
+    assert largest["filename"] == "c.txt"
+    assert largest["size_bytes"] == 768
 
 
 @patch("app.services.s3_service.boto3.client")

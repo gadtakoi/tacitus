@@ -44,7 +44,7 @@ def test_request_id_filter_injects_request_id() -> None:
     )
     assert not hasattr(record, "request_id")
     filt.filter(record)
-    assert record.request_id == "unknown"
+    assert record.request_id == "unknown"  # type: ignore[attr-defined]
 
 
 def test_setup_logging_creates_handlers() -> None:

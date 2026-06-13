@@ -1,13 +1,13 @@
 """Application configuration."""
 
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = ConfigDict(env_prefix="TACITUS_")
+    model_config = SettingsConfigDict(env_prefix="TACITUS_")
 
     app_name: str = "tacitus"
     debug: bool = False

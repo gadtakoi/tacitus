@@ -49,6 +49,15 @@ where = ["."]
 include = ["app*"]
 exclude = ["tests*"]
 
+[tool.mypy]
+python_version = "3.14"
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["boto3", "botocore.*", "jose.*", "passlib.*", "sentry_sdk.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

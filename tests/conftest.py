@@ -30,6 +30,7 @@ os.environ.setdefault(
 )
 
 import asyncio  # noqa: E402
+from collections.abc import Iterator  # noqa: E402
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -73,7 +74,7 @@ def _reset_limiter_state() -> None:
 
 
 @pytest.fixture(autouse=True)
-def reset_global_state() -> None:
+def reset_global_state() -> Iterator[None]:
     """Reset external state between tests.
 
     In-memory auth stores have been replaced by PostgreSQL repositories, so the
