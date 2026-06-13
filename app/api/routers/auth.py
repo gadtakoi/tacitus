@@ -4,10 +4,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.core.security_logging import log_security_event
+from app.db.engine import get_db_session
 from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -36,6 +38,18 @@ security = HTTPBearer(auto_error=False)
 
 
 def _get_client_ip(request: Request) -> str:
+    """Extract the client IP from the request.
+
+    Prefers the ``X-Forwarded-For`` header so the real client IP is preserved
+    when the application runs behind a reverse proxy. Falls back to the
+    direct transport address or ``unknown``.
+
+    Args:
+        request: FastAPI request.
+
+    Returns:
+        Client IP address string.
+    """
     return request.headers.get("x-forwarded-for") or (
         request.client.host if request.client else "unknown"
     )
@@ -43,12 +57,17 @@ def _get_client_ip(request: Request) -> str:
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 @limiter.limit("3/hour")
-async def auth_register(request: Request, body: RegisterRequest) -> UserResponse:
+async def auth_register(
+    request: Request,
+    body: RegisterRequest,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> UserResponse:
     """Register a new user.
 
     Args:
         request: FastAPI request.
         body: Registration credentials.
+        session: Database session.
 
     Returns:
         Registration confirmation.
@@ -57,7 +76,7 @@ async def auth_register(request: Request, body: RegisterRequest) -> UserResponse
     client_ip = _get_client_ip(request)
     logger.info("Registering user", extra={"request_id": request_id, "username": body.username})
     try:
-        register_user(body.username, body.password, client_ip)
+        await register_user(session, body.username, body.password, client_ip)
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message) from e
     return UserResponse(username=body.username, message="User registered successfully")
@@ -65,12 +84,17 @@ async def auth_register(request: Request, body: RegisterRequest) -> UserResponse
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-async def auth_login(request: Request, body: LoginRequest) -> TokenResponse:
+async def auth_login(
+    request: Request,
+    body: LoginRequest,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> TokenResponse:
     """Authenticate user and return JWT tokens.
 
     Args:
         request: FastAPI request.
         body: Login credentials.
+        session: Database session.
 
     Returns:
         Access and refresh tokens.
@@ -79,15 +103,15 @@ async def auth_login(request: Request, body: LoginRequest) -> TokenResponse:
     client_ip = _get_client_ip(request)
     logger.info("Login attempt", extra={"request_id": request_id, "username": body.username})
 
-    if is_brute_force_locked(body.username):
+    if await is_brute_force_locked(session, body.username):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Account temporarily locked due to too many failed attempts",
         )
 
-    user = authenticate_user(body.username, body.password)
+    user = await authenticate_user(session, body.username, body.password)
     if not user:
-        record_failed_login(body.username, client_ip)
+        await record_failed_login(session, body.username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -95,7 +119,7 @@ async def auth_login(request: Request, body: LoginRequest) -> TokenResponse:
 
     access_token = create_access_token({"sub": user["username"]})
     refresh_token = create_refresh_token({"sub": user["username"]})
-    store_refresh_token(refresh_token, user["username"])
+    await store_refresh_token(session, refresh_token, user["username"])
     log_security_event(
         "auth.login.success",
         ip=client_ip,
@@ -110,12 +134,17 @@ async def auth_login(request: Request, body: LoginRequest) -> TokenResponse:
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def auth_refresh(request: Request, body: RefreshRequest) -> TokenResponse:
+async def auth_refresh(
+    request: Request,
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> TokenResponse:
     """Refresh JWT access token using a refresh token.
 
     Args:
         request: FastAPI request.
         body: Refresh request containing refresh token.
+        session: Database session.
 
     Returns:
         New access token.
@@ -123,14 +152,14 @@ async def auth_refresh(request: Request, body: RefreshRequest) -> TokenResponse:
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Token refresh attempt", extra={"request_id": request_id})
 
-    payload = decode_refresh_token(body.refresh_token)
+    payload = await decode_refresh_token(body.refresh_token)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
 
-    stored = get_refresh_token(body.refresh_token)
+    stored = await get_refresh_token(session, body.refresh_token)
     if stored is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -156,12 +185,14 @@ async def auth_refresh(request: Request, body: RefreshRequest) -> TokenResponse:
 async def auth_logout(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict[str, str]:
     """Logout user by revoking access token.
 
     Args:
         request: FastAPI request.
         credentials: Authorization header credentials.
+        session: Database session.
 
     Returns:
         Logout confirmation.
@@ -173,8 +204,8 @@ async def auth_logout(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    revoke_access_token(credentials.credentials)
-    payload = decode_access_token(credentials.credentials)
+    await revoke_access_token(session, credentials.credentials)
+    payload = await decode_access_token(session, credentials.credentials)
     username = payload.get("sub") if payload else None
     log_security_event(
         "auth.token.revoked",

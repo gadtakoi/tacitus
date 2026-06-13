@@ -233,17 +233,17 @@
 
 ## 10. Обновление API слоя
 
-- [ ] В `app/api/dependencies.py` убедиться, что `get_current_user` получает
+- [x] В `app/api/dependencies.py` убедиться, что `get_current_user` получает
   `AsyncSession` и передаёт её в `auth_service`.
-- [ ] Обновить `app/api/routers/auth.py`:
+- [x] Обновить `app/api/routers/auth.py`:
   - все endpoint'ы используют `Depends(get_db_session)`,
   - вызовы `auth_service` содержат сессию.
-- [ ] Проверить остальные роутеры (`files.py`, `streams.py`, `hello.py`) на
+- [x] Проверить остальные роутеры (`files.py`, `streams.py`, `hello.py`) на
   предмет неявного использования auth-зависимостей; при необходимости обновить
   вызовы.
-- [ ] Добавить обработку новых исключений БД на уровне middleware/exception
+- [x] Добавить обработку новых исключений БД на уровне middleware/exception
   handlers (`app/core/exceptions.py`).
-- [ ] Добавить docstring к endpoint'ам и обработчикам.
+- [x] Добавить docstring к endpoint'ам и обработчикам.
 
 ---
 
