@@ -33,12 +33,12 @@ Nginx добавляет следующие security headers ко всем от�
 Установлен `slowapi` + `limits`. Ключ rate-limit формируется как
 `user:<sub>` для авторизованных запросов и `ip:<client_ip>` для анонимных.
 
-| Endpoint              | Лимит   | Ключ         |
-|-----------------------|---------|--------------|
-| `POST /auth/login`    | 5/мин   | IP           |
-| `POST /auth/register` | 3/час   | IP           |
-| `POST /files/upload`  | 10/мин  | пользователь |
-| `GET /files/`         | 60/мин  | пользователь |
+| Endpoint                | Лимит  | Ключ         |
+|-------------------------|--------|--------------|
+| `POST /auth/login`      | 5/мин  | IP           |
+| `POST /auth/register`   | 3/час  | IP           |
+| `POST /files/upload`    | 10/мин | пользователь |
+| `GET /files/`           | 60/мин | пользователь |
 | `GET /files/{filename}` | 30/мин | пользователь |
 
 При превышении возвращается `429 Too Many Requests`.
@@ -48,8 +48,7 @@ Nginx добавляет следующие security headers ко всем от�
 - `memory://` — в процессе (dev, не подходит для нескольких инстансов).
 - `redis://redis:6379` — общее хранилище для production / multi-instance.
 
-Библиотека `limits` не поддерживает PostgreSQL как storage, поэтому для
-распределённых инсталляций используется Redis.
+Библиотека `limits` не поддерживает PostgreSQL как storage, поэтому для распределённых инсталляций используется Redis.
 
 ### 2.2 Brute Force Protection
 
@@ -74,8 +73,8 @@ Nginx добавляет следующие security headers ко всем от�
 ### 2.4 Token Management
 
 - Access token: TTL **15 минут**, содержит уникальный `jti` для отзыва.
-- Refresh token: TTL **7 дней**, хранится в таблице `refresh_tokens` (PostgreSQL).
-  Хранится только SHA-256 хеш токена, а не сам токен.
+- Refresh token: TTL **7 дней**, хранится в таблице `refresh_tokens` (PostgreSQL). Хранится только SHA-256 хеш токена, а
+  не сам токен.
 - `POST /auth/refresh` — обмен refresh token на новый access token.
 - `POST /auth/logout` — добавление `jti` access token в таблицу `revoked_tokens`
   с помощью PostgreSQL upsert (`ON CONFLICT DO NOTHING`) для идемпотентности.
@@ -85,13 +84,11 @@ Nginx добавляет следующие security headers ко всем от�
 
 Скачивание файлов из S3/MinIO происходит в два этапа:
 
-1. **JWT-protected API:** клиент вызывает `GET /files/{filename}` с Bearer
-   access token. Токен проверяется подписью и сверяется с чёрным списком
+1. **JWT-protected API:** клиент вызывает `GET /files/{filename}` с Bearer access token. Токен проверяется подписью и
+   сверяется с чёрным списком
    `revoked_tokens` в PostgreSQL.
-2. **Presigned URL:** после успешной аутентификации бэкенд генерирует
-   краткосрочную подписанную ссылку через boto3 (`generate_presigned_url`) и
-   возвращает её клиенту. Клиент скачивает файл напрямую из S3/MinIO по этой
-   ссылке.
+2. **Presigned URL:** после успешной аутентификации бэкенд генерирует краткосрочную подписанную ссылку через boto3
+   (`generate_presigned_url`) и возвращает её клиенту. Клиент скачивает файл напрямую из S3/MinIO по этой ссылке.
 
 ```text
 Client  -->  GET /files/{filename} (Bearer JWT)  -->  FastAPI
@@ -99,28 +96,24 @@ FastAPI -->  FileUrlResponse { url }              -->  Client
 Client  -->  GET <presigned URL>                  -->  S3/MinIO
 ```
 
-| Параметр | Значение | Описание |
-|----------|----------|----------|
-| Endpoint | `GET /files/{filename}` | Требует валидный access token |
-| Rate limit | 30/минуту | На пользователя (JWT `sub`) |
-| Presigned URL TTL | `TACITUS_PRESIGNED_URL_EXPIRATION` (default 300 сек) | Время жизни прямой ссылки |
-| Auth на presigned URL | Подпись S3 credentials приложения | Клиент не предъявляет отдельных ключей |
+| Параметр              | Значение                                             | Описание                               |
+|-----------------------|------------------------------------------------------|----------------------------------------|
+| Endpoint              | `GET /files/{filename}`                              | Требует валидный access token          |
+| Rate limit            | 30/минуту                                            | На пользователя (JWT `sub`)            |
+| Presigned URL TTL     | `TACITUS_PRESIGNED_URL_EXPIRATION` (default 300 сек) | Время жизни прямой ссылки              |
+| Auth на presigned URL | Подпись S3 credentials приложения                    | Клиент не предъявляет отдельных ключей |
 
 Почему presigned URL считается безопасным:
 
-- Ссылка **уникальна** и криптографически подписана — её невозможно подделать
-  без секрета приложения.
-- Срок действия **ограничен** (по умолчанию 5 минут), поэтому утечка ссылки
-  раскрывает файл только на короткое время.
-- Перед генерацией URL выполняется `head_object`, чтобы не выдавать ссылки на
-  несуществующие файлы.
+- Ссылка **уникальна** и криптографически подписана — её невозможно подделать без секрета приложения.
+- Срок действия **ограничен** (по умолчанию 5 минут), поэтому утечка ссылки раскрывает файл только на короткое время.
+- Перед генерацией URL выполняется `head_object`, чтобы не выдавать ссылки на несуществующие файлы.
 
 Production-рекомендации:
 
 - Bucket policy должна **запрещать публичный доступ** ко всем объектам.
 - MinIO Console (порт 9001) **не должен быть exposed наружу**.
-- Значение `TACITUS_PRESIGNED_URL_EXPIRATION` должно быть минимально
-  достаточным для скачивания файла клиентом.
+- Значение `TACITUS_PRESIGNED_URL_EXPIRATION` должно быть минимально достаточным для скачивания файла клиентом.
 
 ### 2.6 Startup Secret Validation
 
@@ -225,14 +218,12 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 
 ### 6.2 Suspicious Activity Detection
 
-`SuspiciousActivityMiddleware` отслеживает 401/403 ответы по IP и сохраняет их
-в таблице `security_events` (PostgreSQL):
+`SuspiciousActivityMiddleware` отслеживает 401/403 ответы по IP и сохраняет их в таблице `security_events` (PostgreSQL):
 
 - Каждый 401/403 ответ порождает запись `security.response.failure`.
 - При >100 запросов за 5 минут с одного IP логируется
   `security.suspicious_activity` (warning).
-- Устаревшие события (старше 7 дней) очищаются периодически, чтобы таблица не
-  росла неограниченно.
+- Устаревшие события (старше 7 дней) очищаются периодически, чтобы таблица не росла неограниченно.
 
 ---
 
@@ -241,7 +232,8 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 ### 7.1 Non-root Containers
 
 - **App:** `USER tacitus` (uid 1000) в `Dockerfile`
-- **Nginx:** `user nginx;` в `nginx/nginx.conf` (worker processes от непривилегированного пользователя, master process от root для управления портами и privileges)
+- **Nginx:** `user nginx;` в `nginx/nginx.conf` (worker processes от непривилегированного пользователя, master process
+  от root для управления портами и privileges)
 
 ### 7.2 Read-only Root Filesystem
 
