@@ -25,12 +25,11 @@ from app.services.auth_service import (
     clear_refresh_token,
     create_access_token,
     create_refresh_token,
-    decode_refresh_token,
-    get_refresh_token,
     is_brute_force_locked,
     record_failed_login,
     register_user,
     revoke_access_token,
+    rotate_refresh_token,
     store_refresh_token,
     username_from_access_token,
 )
@@ -88,7 +87,7 @@ async def auth_login(
     client_ip = get_client_ip(request)
     logger.info("Login attempt", extra={"request_id": request_id, "username": body.username})
 
-    if await is_brute_force_locked(session, body.username):
+    if await is_brute_force_locked(session, body.username, client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Account temporarily locked due to too many failed attempts",
@@ -119,12 +118,17 @@ async def auth_login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def auth_refresh(
     request: Request,
     body: RefreshRequest,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> TokenResponse:
-    """Refresh JWT access token using a refresh token.
+    """Refresh JWT access token using a refresh token (with rotation).
+
+    The presented refresh token is single-use: it is revoked and replaced by
+    a brand new token pair. If a revoked token is presented again (possible
+    token theft), ALL refresh tokens of the user are revoked.
 
     Args:
         request: FastAPI request.
@@ -132,36 +136,29 @@ async def auth_refresh(
         session: Database session.
 
     Returns:
-        New access token.
+        New access and refresh tokens.
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Token refresh attempt", extra={"request_id": request_id})
 
-    payload = await decode_refresh_token(body.refresh_token)
-    if payload is None:
+    try:
+        username, new_refresh_token = await rotate_refresh_token(session, body.refresh_token)
+    except AuthError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        )
-
-    stored = await get_refresh_token(session, body.refresh_token)
-    if stored is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        )
-
-    username = payload.get("sub")
-    if username is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
+            detail=e.message,
+        ) from e
 
     access_token = create_access_token({"sub": username})
+    log_security_event(
+        "auth.refresh.success",
+        ip=get_client_ip(request),
+        user=username,
+        extra={"request_id": request_id},
+    )
     return TokenResponse(
         access_token=access_token,
-        refresh_token=body.refresh_token,
+        refresh_token=new_refresh_token,
         token_type="bearer",
     )
 

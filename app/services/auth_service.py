@@ -36,6 +36,10 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 # Brute-force protection constants.
 BRUTE_FORCE_WINDOW_MINUTES = 15
 BRUTE_FORCE_MAX_ATTEMPTS = 5
+# Global backstop: attempts for one username from ANY IP within the window.
+# Prevents credential stuffing across many IPs while the per-(username, IP)
+# lock stays narrow enough not to lock out legitimate users.
+BRUTE_FORCE_GLOBAL_MAX_ATTEMPTS = 20
 
 
 class AuthError(Exception):
@@ -212,8 +216,18 @@ async def decode_refresh_token(token: str) -> dict[str, Any] | None:
     return payload
 
 
+# Run revoked-token cleanup approximately every N logout operations per
+# process. Keeps the blacklist table bounded without a separate scheduler.
+_REVOKE_CLEANUP_INTERVAL = 50
+_revoke_counter = 0
+
+
 async def revoke_access_token(session: AsyncSession, token: str) -> None:
     """Revoke an access token before its expiration.
+
+    Periodically also removes blacklist entries whose tokens have already
+    expired naturally — they can no longer be replayed, so keeping them only
+    grows the table.
 
     Args:
         session: Database session.
@@ -222,6 +236,8 @@ async def revoke_access_token(session: AsyncSession, token: str) -> None:
     Raises:
         AuthError: If the token does not contain a ``jti`` claim.
     """
+    global _revoke_counter
+
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError as exc:
@@ -241,6 +257,19 @@ async def revoke_access_token(session: AsyncSession, token: str) -> None:
     repo = TokenBlacklistRepository(session)
     try:
         await repo.add(jti, expires_at)
+
+        # Best-effort periodic cleanup of blacklist entries for tokens whose
+        # lifetime has already passed. Process-local counter: in multi-instance
+        # deployments each worker cleans up at its own pace.
+        _revoke_counter += 1
+        if _revoke_counter >= _REVOKE_CLEANUP_INTERVAL:
+            _revoke_counter = 0
+            cleaned = await repo.cleanup_expired()
+            if cleaned:
+                logger.info(
+                    "Cleaned up expired revoked tokens",
+                    extra={"count": cleaned},
+                )
     except (IntegrityError, DBAPIError) as exc:
         await session.rollback()
         logger.exception("Database error while revoking access token")
@@ -307,7 +336,10 @@ async def store_refresh_token(session: AsyncSession, token: str, username: str) 
         raise AppError("Failed to store refresh token", status_code=500) from exc
 
 
-async def get_refresh_token(session: AsyncSession, token: str) -> dict[str, Any] | None:
+async def get_refresh_token(
+    session: AsyncSession,
+    token: str,
+) -> dict[str, Any] | None:
     """Retrieve refresh token data if it exists and is still valid.
 
     Args:
@@ -315,8 +347,13 @@ async def get_refresh_token(session: AsyncSession, token: str) -> dict[str, Any]
         token: Raw refresh token string.
 
     Returns:
-        Dictionary with ``sub`` (username) and ``exp`` (expiration) if valid,
-        otherwise None.
+        Dictionary with ``sub`` (username), ``exp`` (expiration) and
+        ``already_revoked`` (True when the token was previously revoked —
+        a strong indicator of token theft) if the token exists, otherwise
+        None for unknown tokens.
+
+    Raises:
+        AppError: On unexpected database errors.
     """
     token_hash = _hash_token(token)
     repo = RefreshTokenRepository(session)
@@ -329,11 +366,106 @@ async def get_refresh_token(session: AsyncSession, token: str) -> dict[str, Any]
     if stored is None:
         return None
     if stored.revoked_at is not None:
-        return None
+        # Known but revoked: return a marker so the caller can treat this as
+        # token reuse rather than a plain invalid token.
+        return {"sub": stored.user.username, "exp": stored.expires_at, "already_revoked": True}
     if datetime.now(UTC) > stored.expires_at:
         return None
 
-    return {"sub": stored.user.username, "exp": stored.expires_at}
+    return {"sub": stored.user.username, "exp": stored.expires_at, "already_revoked": False}
+
+
+async def rotate_refresh_token(
+    session: AsyncSession,
+    old_token: str,
+) -> tuple[str, str]:
+    """Rotate a refresh token: revoke the old one and issue a new pair.
+
+    Refresh token rotation limits the lifetime of any single refresh token
+    to one use. Reuse detection is built in:
+
+    - If the presented token is already revoked, it is assumed stolen: ALL
+      refresh tokens of the user are revoked (token family disabled), a
+      security event is recorded and an ``AuthError`` is raised.
+    - On success a brand new access + refresh token pair is returned and
+      persisted.
+
+    Args:
+        session: Database session.
+        old_token: Raw refresh token string presented by the client.
+
+    Returns:
+        Tuple ``(username, new_refresh_token)``.
+
+    Raises:
+        AuthError: If the token is invalid, expired, or reuse was detected.
+        AppError: On unexpected database errors.
+    """
+    stored = await get_refresh_token(session, old_token)
+    if stored is None:
+        raise AuthError("Invalid or expired refresh token")
+
+    username = stored["sub"]
+    if stored.get("already_revoked"):
+        # Reuse of a revoked token: assume compromise, kill the whole family.
+        logger.warning(
+            "Refresh token reuse detected; revoking all tokens for user",
+            extra={"user": username},
+        )
+        await _revoke_all_user_tokens(session, username)
+        log_security_event(
+            "auth.refresh.reuse_detected",
+            severity="warning",
+            user=username,
+        )
+        raise AuthError("Refresh token reuse detected; all sessions revoked")
+
+    # Issue a fresh token pair and retire the old refresh token.
+    new_refresh_token = create_refresh_token({"sub": username})
+    await store_refresh_token(session, new_refresh_token, username)
+
+    token_hash = _hash_token(old_token)
+    repo = RefreshTokenRepository(session)
+    try:
+        revoked = await repo.revoke(token_hash)
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while rotating refresh token")
+        raise AppError("Failed to rotate refresh token", status_code=500) from exc
+    if not revoked:
+        # Concurrent rotation won the race: treat as reuse.
+        logger.warning("Concurrent refresh token rotation detected", extra={"user": username})
+        await _revoke_all_user_tokens(session, username)
+        raise AuthError("Refresh token reuse detected; all sessions revoked")
+
+    return username, new_refresh_token
+
+
+async def _revoke_all_user_tokens(session: AsyncSession, username: str) -> None:
+    """Revoke every active refresh token belonging to the user.
+
+    Args:
+        session: Database session.
+        username: Owner of the tokens.
+
+    Raises:
+        AppError: On unexpected database errors.
+    """
+    user_repo = UserRepository(session)
+    try:
+        user = await user_repo.get_by_username(username)
+        if user is None:
+            return
+        refresh_repo = RefreshTokenRepository(session)
+        revoked = await refresh_repo.revoke_all_for_user(user.id)
+        logger.warning(
+            "Revoked all refresh tokens for user",
+            extra={"user": username, "count": revoked},
+        )
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while revoking user tokens")
+        raise AppError("Failed to revoke tokens", status_code=500) from exc
 
 
 async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
@@ -356,12 +488,27 @@ async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
         raise AppError("Failed to clear refresh token", status_code=500) from exc
 
 
-async def is_brute_force_locked(session: AsyncSession, username: str) -> bool:
+async def is_brute_force_locked(
+    session: AsyncSession,
+    username: str,
+    client_ip: str | None = None,
+) -> bool:
     """Check if an account is temporarily locked due to failed login attempts.
+
+    Two thresholds protect against different attack shapes:
+
+    - Per ``(username, ip)``: ``BRUTE_FORCE_MAX_ATTEMPTS`` failures from the
+      same address lock that pair. A distributed attacker cannot lock out a
+      legitimate user logging in from their own IP.
+    - Per ``username`` (global): ``BRUTE_FORCE_GLOBAL_MAX_ATTEMPTS`` failures
+      from any address lock the account entirely — a backstop against
+      credential stuffing spread across many IPs.
 
     Args:
         session: Database session.
         username: Username to check.
+        client_ip: Client IP address, if known. When ``None`` only the global
+            threshold applies.
 
     Returns:
         True if the account is temporarily locked.
@@ -369,12 +516,18 @@ async def is_brute_force_locked(session: AsyncSession, username: str) -> bool:
     repo = FailedLoginAttemptRepository(session)
     cutoff = datetime.now(UTC) - timedelta(minutes=BRUTE_FORCE_WINDOW_MINUTES)
     try:
-        attempts = await repo.count_recent(username, cutoff)
+        if client_ip is not None:
+            per_ip_attempts = await repo.count_recent(username, cutoff, ip_address=client_ip)
+            if per_ip_attempts >= BRUTE_FORCE_MAX_ATTEMPTS:
+                return True
+        global_attempts = await repo.count_recent(username, cutoff)
+        if global_attempts >= BRUTE_FORCE_GLOBAL_MAX_ATTEMPTS:
+            return True
     except DBAPIError as exc:
         logger.exception("Database error while checking brute-force lock")
         raise AppError("Failed to check account lock", status_code=500) from exc
 
-    return attempts >= BRUTE_FORCE_MAX_ATTEMPTS
+    return False
 
 
 async def record_failed_login(session: AsyncSession, username: str, client_ip: str) -> None:

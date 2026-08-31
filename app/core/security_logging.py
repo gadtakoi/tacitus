@@ -76,6 +76,10 @@ class SuspiciousActivityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         """Track 401/403 responses and log suspicious activity.
 
+        All database work in this middleware is best-effort: observability
+        must never break request handling. If PostgreSQL is unavailable the
+        original response is returned unchanged and the failure is logged.
+
         Args:
             request: Incoming request.
             call_next: Next handler in the middleware stack.
@@ -91,46 +95,54 @@ class SuspiciousActivityMiddleware(BaseHTTPMiddleware):
         ip = get_client_ip(request)
         now = datetime.now(UTC)
 
-        async with AsyncSessionLocal() as session:
-            repo = SecurityEventRepository(session)
-            await repo.record(
-                event_type="security.response.failure",
-                ip_address=ip,
-                details={
-                    "status_code": response.status_code,
-                    "path": request.url.path,
-                    "method": request.method,
-                },
-            )
-
-            cutoff = now - timedelta(minutes=SUSPICIOUS_WINDOW_MINUTES)
-            count = await repo.count_recent_by_ip(ip, cutoff)
-
-            if count > SUSPICIOUS_THRESHOLD:
-                log_security_event(
-                    "security.suspicious_activity",
-                    severity="warning",
-                    ip=ip,
-                    extra={
-                        "count": count,
-                        "window_minutes": SUSPICIOUS_WINDOW_MINUTES,
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = SecurityEventRepository(session)
+                await repo.record(
+                    event_type="security.response.failure",
+                    ip_address=ip,
+                    details={
                         "status_code": response.status_code,
-                        "threshold": SUSPICIOUS_THRESHOLD,
+                        "path": request.url.path,
+                        "method": request.method,
                     },
                 )
 
-            # Best-effort periodic cleanup of stale events. The counter is
-            # process-local, so cleanup may happen more or less often in
-            # multi-instance deployments, but the table stays bounded.
-            SuspiciousActivityMiddleware._event_counter += 1
-            if SuspiciousActivityMiddleware._event_counter >= _CLEANUP_INTERVAL:
-                SuspiciousActivityMiddleware._event_counter = 0
-                retention_cutoff = now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS)
-                cleaned = await repo.cleanup_old(retention_cutoff)
-                if cleaned:
-                    logger.info(
-                        "Cleaned up stale security events",
-                        extra={"count": cleaned},
+                cutoff = now - timedelta(minutes=SUSPICIOUS_WINDOW_MINUTES)
+                count = await repo.count_recent_by_ip(ip, cutoff)
+
+                if count > SUSPICIOUS_THRESHOLD:
+                    log_security_event(
+                        "security.suspicious_activity",
+                        severity="warning",
+                        ip=ip,
+                        extra={
+                            "count": count,
+                            "window_minutes": SUSPICIOUS_WINDOW_MINUTES,
+                            "status_code": response.status_code,
+                            "threshold": SUSPICIOUS_THRESHOLD,
+                        },
                     )
+
+                # Best-effort periodic cleanup of stale events. The counter is
+                # process-local, so cleanup may happen more or less often in
+                # multi-instance deployments, but the table stays bounded.
+                SuspiciousActivityMiddleware._event_counter += 1
+                if SuspiciousActivityMiddleware._event_counter >= _CLEANUP_INTERVAL:
+                    SuspiciousActivityMiddleware._event_counter = 0
+                    retention_cutoff = now - timedelta(days=SECURITY_EVENT_RETENTION_DAYS)
+                    cleaned = await repo.cleanup_old(retention_cutoff)
+                    if cleaned:
+                        logger.info(
+                            "Cleaned up stale security events",
+                            extra={"count": cleaned},
+                        )
+        except Exception:
+            # Observability must never take down request handling: log the
+            # failure and return the original response to the client.
+            logger.exception(
+                "Failed to persist security event; skipping suspicious activity tracking",
+                extra={"ip": ip, "path": request.url.path},
+            )
 
         return response

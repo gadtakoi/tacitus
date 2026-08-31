@@ -131,6 +131,49 @@ async def test_failed_login_attempt_repository(db_session) -> None:
 
 
 @pytest.mark.anyio
+async def test_failed_login_count_recent_filters_by_ip(db_session) -> None:
+    """count_recent with ip_address counts only attempts from that IP."""
+    repo = FailedLoginAttemptRepository(db_session)
+    await repo.record("victim", "10.0.0.1")
+    await repo.record("victim", "10.0.0.1")
+    await repo.record("victim", "10.0.0.2")
+
+    recent = datetime.now(UTC) - timedelta(minutes=10)
+
+    # Per-IP count narrows to attempts from a single address.
+    assert await repo.count_recent("victim", recent, ip_address="10.0.0.1") == 2
+    assert await repo.count_recent("victim", recent, ip_address="10.0.0.2") == 1
+    assert await repo.count_recent("victim", recent, ip_address="10.0.0.3") == 0
+    # Without an IP the global count includes every attempt.
+    assert await repo.count_recent("victim", recent) == 3
+
+
+@pytest.mark.anyio
+async def test_refresh_token_repository_revoke_all_for_user(db_session) -> None:
+    """revoke_all_for_user disables every active token of the user."""
+    user_repo = UserRepository(db_session)
+    user = await user_repo.create("bulk_user", "hash")
+    other = await user_repo.create("other_user", "hash")
+
+    repo = RefreshTokenRepository(db_session)
+    expires = datetime.now(UTC) + timedelta(days=7)
+    await repo.create(user.id, "bulk_hash_1", expires)
+    await repo.create(user.id, "bulk_hash_2", expires)
+    await repo.create(other.id, "other_hash_1", expires)
+
+    revoked = await repo.revoke_all_for_user(user.id)
+    assert revoked == 2
+
+    assert await repo.is_valid("bulk_hash_1") is False
+    assert await repo.is_valid("bulk_hash_2") is False
+    # Tokens of other users are untouched.
+    assert await repo.is_valid("other_hash_1") is True
+
+    # Already-revoked tokens are not counted on the second call.
+    assert await repo.revoke_all_for_user(user.id) == 0
+
+
+@pytest.mark.anyio
 async def test_security_event_repository(db_session) -> None:
     """Security events are recorded, counted by IP and cleaned up."""
     repo = SecurityEventRepository(db_session)

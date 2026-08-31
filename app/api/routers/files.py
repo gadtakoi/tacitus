@@ -101,7 +101,7 @@ async def list_files(
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Listing files", extra={"request_id": request_id, "user": current_user})
-    files = s3_service.list_files()
+    files = await s3_service.list_files()
     return FileListResponse(files=files)
 
 
@@ -148,11 +148,12 @@ async def upload_file(
         user=current_user,
         extra={"request_id": request_id, "file_name": sanitized, "size": len(content)},
     )
-    s3_service.upload_file(sanitized, content)
+    await s3_service.upload_file(sanitized, content)
     return FileUploadResponse(filename=sanitized)
 
 
 @router.get("/stats", response_model=S3StatsResponse)
+@limiter.limit("10/minute", key_func=get_user_or_ip)
 async def get_stats(
     request: Request,
     current_user: str = Depends(get_current_user),
@@ -168,7 +169,7 @@ async def get_stats(
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Fetching bucket stats", extra={"request_id": request_id, "user": current_user})
-    stats = s3_service.get_bucket_stats()
+    stats = await s3_service.get_bucket_stats()
     largest = stats.get("largest_file")
     return S3StatsResponse(
         total_files=stats["total_files"],
@@ -222,7 +223,7 @@ async def get_file_url(
     )
 
     try:
-        url = s3_service.get_presigned_url(sanitized)
+        url = await s3_service.get_presigned_url(sanitized)
     except S3FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
 
@@ -230,6 +231,7 @@ async def get_file_url(
 
 
 @router.delete("/{filename}", response_model=FileDeleteResponse)
+@limiter.limit("10/minute", key_func=get_user_or_ip)
 async def delete_file(
     request: Request,
     filename: str,
@@ -253,5 +255,5 @@ async def delete_file(
         user=current_user,
         extra={"request_id": request_id, "file_name": sanitized},
     )
-    s3_service.delete_file(sanitized)
+    await s3_service.delete_file(sanitized)
     return FileDeleteResponse(filename=sanitized)

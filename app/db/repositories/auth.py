@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
@@ -166,6 +166,29 @@ class RefreshTokenRepository(BaseRepository):
         await self._session.commit()
         return True
 
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
+        """Revoke every active refresh token of a user.
+
+        Used for token-reuse detection: when a revoked token is presented
+        again, the whole token family is presumed compromised and disabled.
+
+        Args:
+            user_id: UUID of the token owner.
+
+        Returns:
+            Number of tokens that were revoked.
+        """
+        result = await self._session.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now(UTC)),
+        )
+        await self._session.commit()
+        return cast(CursorResult[Any], result).rowcount
+
     async def cleanup_expired(self, cutoff: datetime | None = None) -> int:
         """Delete refresh tokens that expired before the cutoff time.
 
@@ -270,21 +293,34 @@ class FailedLoginAttemptRepository(BaseRepository):
         await self._session.refresh(attempt)
         return attempt
 
-    async def count_recent(self, username: str, cutoff: datetime) -> int:
+    async def count_recent(
+        self,
+        username: str,
+        cutoff: datetime,
+        ip_address: str | None = None,
+    ) -> int:
         """Count failed login attempts for a user since the cutoff time.
+
+        When ``ip_address`` is provided only attempts from that address are
+        counted, so a distributed attacker cannot lock out a legitimate user
+        by spraying failures from other IPs.
 
         Args:
             username: Login name to check.
             cutoff: UTC timestamp; older attempts are ignored.
+            ip_address: Optional client IP to narrow the count to.
 
         Returns:
             Number of matching attempts.
         """
+        conditions = [
+            FailedLoginAttempt.username == username,
+            FailedLoginAttempt.created_at > cutoff,
+        ]
+        if ip_address is not None:
+            conditions.append(FailedLoginAttempt.ip_address == ip_address)
         result = await self._session.execute(
-            select(func.count(FailedLoginAttempt.id)).where(
-                FailedLoginAttempt.username == username,
-                FailedLoginAttempt.created_at > cutoff,
-            ),
+            select(func.count(FailedLoginAttempt.id)).where(*conditions),
         )
         return result.scalar_one()
 

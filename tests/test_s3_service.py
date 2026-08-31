@@ -1,4 +1,9 @@
-"""Tests for S3 service."""
+"""Tests for S3 service.
+
+Public methods are ``async`` (blocking boto3 calls are offloaded to a thread
+pool), so these tests drive the service through ``anyio`` and assert on the
+same mocked boto3 client.
+"""
 
 from unittest.mock import MagicMock, patch
 
@@ -12,27 +17,30 @@ def s3_service() -> S3Service:
     return S3Service()
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_list_files(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_list_files(mock_client: MagicMock, s3_service: S3Service) -> None:
     mock_client.return_value.list_objects_v2.return_value = {
         "Contents": [
             {"Key": "file1.txt"},
             {"Key": "file2.txt"},
         ]
     }
-    files = s3_service.list_files()
+    files = await s3_service.list_files()
     assert files == ["file1.txt", "file2.txt"]
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_list_files_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_list_files_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
     mock_client.return_value.list_objects_v2.return_value = {}
-    files = s3_service.list_files()
+    files = await s3_service.list_files()
     assert files == []
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_list_files_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_list_files_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
     """Buckets with more than 1000 objects must be listed across pages."""
     mock_client.return_value.list_objects_v2.side_effect = [
         {
@@ -45,15 +53,16 @@ def test_list_files_pagination(mock_client: MagicMock, s3_service: S3Service) ->
             "IsTruncated": False,
         },
     ]
-    files = s3_service.list_files()
+    files = await s3_service.list_files()
     assert files == ["file1.txt", "file2.txt", "file3.txt"]
     # The second call must carry the continuation token
     second_call = mock_client.return_value.list_objects_v2.call_args_list[1]
     assert second_call.kwargs["ContinuationToken"] == "token-1"
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_bucket_stats_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_bucket_stats_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
     """Bucket stats must aggregate across pagination pages."""
     mock_client.return_value.list_objects_v2.side_effect = [
         {
@@ -66,7 +75,7 @@ def test_get_bucket_stats_pagination(mock_client: MagicMock, s3_service: S3Servi
             "IsTruncated": False,
         },
     ]
-    stats = s3_service.get_bucket_stats()
+    stats = await s3_service.get_bucket_stats()
     assert stats["total_files"] == 2
     assert stats["total_size_bytes"] == 768
     largest = stats["largest_file"]
@@ -74,9 +83,10 @@ def test_get_bucket_stats_pagination(mock_client: MagicMock, s3_service: S3Servi
     assert largest["filename"] == "b.txt"
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_upload_file(mock_client: MagicMock, s3_service: S3Service) -> None:
-    result = s3_service.upload_file("test.txt", b"hello")
+async def test_upload_file(mock_client: MagicMock, s3_service: S3Service) -> None:
+    result = await s3_service.upload_file("test.txt", b"hello")
     assert result == "test.txt"
     mock_client.return_value.put_object.assert_called_once_with(
         Bucket="tacitus-files",
@@ -85,10 +95,11 @@ def test_upload_file(mock_client: MagicMock, s3_service: S3Service) -> None:
     )
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_presigned_url(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_presigned_url(mock_client: MagicMock, s3_service: S3Service) -> None:
     mock_client.return_value.generate_presigned_url.return_value = "http://example.com/url"
-    url = s3_service.get_presigned_url("test.txt")
+    url = await s3_service.get_presigned_url("test.txt")
     assert url == "http://example.com/url"
     mock_client.return_value.head_object.assert_called_once_with(
         Bucket="tacitus-files",
@@ -101,10 +112,14 @@ def test_get_presigned_url(mock_client: MagicMock, s3_service: S3Service) -> Non
     )
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_presigned_url_custom_expiration(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_presigned_url_custom_expiration(
+    mock_client: MagicMock,
+    s3_service: S3Service,
+) -> None:
     mock_client.return_value.generate_presigned_url.return_value = "http://example.com/url"
-    url = s3_service.get_presigned_url("test.txt", expiration=600)
+    url = await s3_service.get_presigned_url("test.txt", expiration=600)
     assert url == "http://example.com/url"
     mock_client.return_value.generate_presigned_url.assert_called_once_with(
         "get_object",
@@ -113,8 +128,12 @@ def test_get_presigned_url_custom_expiration(mock_client: MagicMock, s3_service:
     )
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_presigned_url_file_not_found(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_presigned_url_file_not_found(
+    mock_client: MagicMock,
+    s3_service: S3Service,
+) -> None:
     from botocore.exceptions import ClientError
 
     error_response = {"Error": {"Code": "404", "Message": "Not Found"}}
@@ -123,20 +142,22 @@ def test_get_presigned_url_file_not_found(mock_client: MagicMock, s3_service: S3
     from app.services.s3_service import S3FileNotFoundError
 
     with pytest.raises(S3FileNotFoundError):
-        s3_service.get_presigned_url("missing.txt")
+        await s3_service.get_presigned_url("missing.txt")
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_delete_file(mock_client: MagicMock, s3_service: S3Service) -> None:
-    s3_service.delete_file("test.txt")
+async def test_delete_file(mock_client: MagicMock, s3_service: S3Service) -> None:
+    await s3_service.delete_file("test.txt")
     mock_client.return_value.delete_object.assert_called_once_with(
         Bucket="tacitus-files",
         Key="test.txt",
     )
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None:
     """Test fetching bucket statistics."""
     mock_client.return_value.list_objects_v2.return_value = {
         "Contents": [
@@ -145,7 +166,7 @@ def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None
             {"Key": "c.txt", "Size": 768},
         ]
     }
-    stats = s3_service.get_bucket_stats()
+    stats = await s3_service.get_bucket_stats()
     assert stats["total_files"] == 3
     assert stats["total_size_bytes"] == 1536
     assert stats["total_size_human"] == "1.5 KB"
@@ -156,11 +177,12 @@ def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -> None
     assert largest["size_bytes"] == 768
 
 
+@pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
-def test_get_bucket_stats_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
+async def test_get_bucket_stats_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
     """Test fetching stats for empty bucket."""
     mock_client.return_value.list_objects_v2.return_value = {}
-    stats = s3_service.get_bucket_stats()
+    stats = await s3_service.get_bucket_stats()
     assert stats["total_files"] == 0
     assert stats["total_size_bytes"] == 0
     assert stats["total_size_human"] == "0 B"

@@ -211,6 +211,52 @@ async def test_logout_revokes_refresh_token(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
+async def test_refresh_rotates_token(client: AsyncClient) -> None:
+    """Refresh must issue a NEW refresh token instead of returning the old one."""
+    await client.post(
+        "/auth/register", json={"username": "rotateuser", "password": _STRONG_PASSWORD}
+    )
+    login = await client.post(
+        "/auth/login", json={"username": "rotateuser", "password": _STRONG_PASSWORD}
+    )
+    old_refresh = login.json()["refresh_token"]
+
+    response = await client.post("/auth/refresh", json={"refresh_token": old_refresh})
+    assert response.status_code == 200
+    new_refresh = response.json()["refresh_token"]
+    assert new_refresh != old_refresh
+
+    # The new refresh token must be usable for the next rotation
+    response = await client.post("/auth/refresh", json={"refresh_token": new_refresh})
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_refresh_reuse_detected_revokes_family(client: AsyncClient) -> None:
+    """Presenting an already rotated token must revoke the whole token family."""
+    await client.post(
+        "/auth/register", json={"username": "reuseuser", "password": _STRONG_PASSWORD}
+    )
+    login = await client.post(
+        "/auth/login", json={"username": "reuseuser", "password": _STRONG_PASSWORD}
+    )
+    old_refresh = login.json()["refresh_token"]
+
+    # First use rotates the token
+    response = await client.post("/auth/refresh", json={"refresh_token": old_refresh})
+    assert response.status_code == 200
+    new_refresh = response.json()["refresh_token"]
+
+    # Replaying the OLD (already rotated) token must fail...
+    response = await client.post("/auth/refresh", json={"refresh_token": old_refresh})
+    assert response.status_code == 401
+
+    # ...and the reuse must have killed the NEW token as well
+    response = await client.post("/auth/refresh", json={"refresh_token": new_refresh})
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
 async def test_brute_force_lockout(client: AsyncClient) -> None:
     """Test account locks after 5 failed attempts."""
     username = "bruteuser"
