@@ -1,24 +1,121 @@
 const API_BASE = "/api";
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-  const token = localStorage.getItem("token");
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+const ACCESS_TOKEN_KEY = "token";
+const REFRESH_TOKEN_KEY = "refresh_token";
+
+/** Single-flight refresh: concurrent 401s share one /auth/refresh call. */
+let refreshPromise: Promise<boolean> | null = null;
+
+function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setTokens(access: string, refresh: string): void {
+  localStorage.setItem(ACCESS_TOKEN_KEY, access);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export function hasTokens(): boolean {
+  return getAccessToken() !== null;
+}
+
+/**
+ * Exchange the stored refresh token for a new token pair (rotation).
+ * Returns false when there is no refresh token or rotation is rejected
+ * (expired / already used token): the caller should force re-login.
+ */
+export async function refreshTokens(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    return false;
   }
-  if (options?.body && !(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
-  }
-  const response = await fetch(url, {
-    ...options,
+
+  // Refresh is unauthenticated and must never recurse into apiFetchAuth.
+  const response = await fetch(`${API_BASE}/auth/refresh`, {
+    method: "POST",
     headers: {
-      ...headers,
-      ...(options?.headers as Record<string, string> || {}),
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({ refresh_token: refreshToken }),
   });
+
+  if (!response.ok) {
+    // Reuse detection revokes the whole token family — drop everything.
+    clearTokens();
+    return false;
+  }
+
+  const data = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+  };
+  setTokens(data.access_token, data.refresh_token);
+  return true;
+}
+
+async function refreshOnce(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = refreshTokens().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+/** Callback fired when the session is definitively dead (refresh failed). */
+let onSessionExpired: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const doFetch = async (): Promise<Response> => {
+    const url = `${API_BASE}${path}`;
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    const token = getAccessToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    if (options?.body && !(options.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options?.headers as Record<string, string> | undefined),
+      },
+    });
+  };
+
+  let response = await doFetch();
+
+  // Access token expired (15 min): rotate via refresh token and retry once.
+  if (response.status === 401 && getRefreshToken()) {
+    const refreshed = await refreshOnce();
+    if (refreshed) {
+      response = await doFetch();
+    }
+  }
+
+  if (response.status === 401) {
+    clearTokens();
+    onSessionExpired?.();
+  }
+
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`HTTP ${response.status}: ${error}`);
@@ -80,7 +177,7 @@ export const filesApi = {
 
 export const authApi = {
   login: (username: string, password: string) =>
-    apiFetch<{ access_token: string; token_type: string }>("/auth/login", {
+    apiFetch<TokenResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
@@ -89,4 +186,37 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  me: () => apiFetch<{ username: string; message: string | null }>("/auth/me"),
+  logout: () =>
+    apiFetch<{ message: string }>("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: getRefreshToken() ?? "" }),
+    }),
 };
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Human-readable reason for a failed upload, or null if size is fine. */
+export function checkUploadSize(file: File): string | null {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `File too large: ${file.name} (${formatBytes(file.size)}). Maximum is 10 MB.`;
+  }
+  return null;
+}
+
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
+}

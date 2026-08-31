@@ -14,6 +14,15 @@ export default defineConfig({
     server: {
         host: true,
         port: 5173,
+        proxy: {
+            // Dev proxy: the SPA calls /api/*, the FastAPI backend serves /*
+            // (nginx strips /api in production — mirror that here).
+            "/api": {
+                target: "http://localhost:8000",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api/, ""),
+            },
+        },
     },
 
     preview: {

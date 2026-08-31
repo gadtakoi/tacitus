@@ -21,7 +21,7 @@ import {
   IconChartBar,
   IconAlertCircle,
 } from "@tabler/icons-react";
-import { filesApi, type StatsResponse } from "../api/client";
+import { filesApi, checkUploadSize, formatBytes, type StatsResponse } from "../api/client";
 
 function FileManager() {
   const [files, setFiles] = useState<string[]>([]);
@@ -75,6 +75,11 @@ function FileManager() {
 
   const handleUpload = async (file: File | null) => {
     if (!file) return;
+    const sizeError = checkUploadSize(file);
+    if (sizeError) {
+      setError(sizeError);
+      return;
+    }
     setUploading(true);
     setError("");
     try {
@@ -149,7 +154,7 @@ function FileManager() {
                 Average:{" "}
                 <strong>
                   {stats.average_size_bytes != null
-                    ? `${stats.average_size_bytes.toFixed(0)} bytes`
+                    ? formatBytes(stats.average_size_bytes)
                     : "N/A"}
                 </strong>
               </Text>

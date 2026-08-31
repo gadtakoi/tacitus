@@ -10,7 +10,7 @@ import {
   Stack,
 } from "@mantine/core";
 import { useForm, isNotEmpty } from "@mantine/form";
-import { authApi } from "../api/client";
+import { authApi, setTokens } from "../api/client";
 
 function LoginForm() {
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ function LoginForm() {
     setLoading(true);
     try {
       const response = await authApi.login(values.username, values.password);
-      localStorage.setItem("token", response.access_token);
+      setTokens(response.access_token, response.refresh_token);
       navigate("/files");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
