@@ -53,4 +53,7 @@ htmlcov/
 /frontend/node_modules/
 /recordings
 /.my/
-!/.agentbridge/
+
+# Tooling artifacts
+/.agentbridge/
+/ClaudeAdvancedPlugins/
