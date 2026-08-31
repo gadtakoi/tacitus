@@ -28,6 +28,16 @@
     - "Dockerfile"
     - "docker-compose.yml"
     - "pyproject.toml"
+    - "alembic.ini"
+  notify: Restart Tacitus
+
+- name: Copy database migrations
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../migrations/"
+    dest: "{{ tacitus_deploy_dir }}/migrations/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
   notify: Restart Tacitus
 
 - name: Copy application source code

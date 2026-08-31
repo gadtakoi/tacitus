@@ -75,7 +75,11 @@ wsl --install -d Ubuntu
 wsl -d Ubuntu
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
-uv pip install ansible-core
+uv pip install "ansible-core>=2.21.0"
+
+# sshpass нужен для подключения по паролю (ansible_ssh_pass),
+# rsync — для ansible.posix.synchronize (синхронизация frontend/)
+sudo apt update && sudo apt install -y sshpass rsync
 
 mkdir ~/.ssh/
 ssh-keyscan -H 5.129.206.199 >> ~/.ssh/known_hosts
@@ -84,6 +88,11 @@ ssh-keyscan -H 5.129.206.199 >> ~/.ssh/known_hosts
 cd /mnt/c/Users/BSPB/PycharmProjects/tacitus
 ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml -e target_host=11.22.33.44 -e deploy_user=root -e deploy_password="password"
 ```
+
+> **Безопасность:** не храните пароль сервера в скриптах и истории shell.
+> Предпочтительные варианты:
+> `ansible-playbook ... --ask-pass` (интерактивный ввод пароля) или
+> SSH-ключи (`ssh-copy-id root@<host>`).
 
 Ansible-плейбук автоматически устанавливает Docker, копирует код проекта на сервер, создаёт файл окружения `.env` и
 запускает приложение через `docker compose`. При необходимости получает SSL-сертификат Let's Encrypt и настраивает
@@ -94,12 +103,16 @@ HTTPS.
 **На управляющей машине (ваш ПК):**
 
 - Python 3.10+
-- Ansible 2.14+
+- Ansible (`ansible-core >= 2.21.0`, см. `pyproject.toml`)
+- `sshpass` — если используется подключение по паролю (`ansible_ssh_pass`)
+- `rsync` — для `ansible.posix.synchronize` (синхронизация `frontend/`)
+- Коллекция `ansible.posix` (`ansible-galaxy collection list | grep posix`)
 
 **На целевом сервере:**
 
 - Ubuntu 20.04+ / Debian 11+ (роль `docker_install` заточена под `apt`)
 - SSH-доступ с правами `sudo` (безпарольный `sudo` или пароль через `--ask-become-pass`)
+- `rsync` установлен (обычно есть в Ubuntu; в минимальных образах может отсутствовать)
 - Открытые порты: 80 и (опционально) 443, а также настраиваемый RTSP-порт MediaMTX (по умолчанию 8554)
 
 ### Установка Ansible
