@@ -164,6 +164,33 @@ async def decode_access_token(session: AsyncSession, token: str) -> dict[str, An
     return payload
 
 
+def username_from_access_token(token: str) -> str | None:
+    """Extract the ``sub`` claim from an access token without revocation checks.
+
+    Unlike :func:`decode_access_token` this helper does NOT consult the
+    token blacklist. It is intended for cases where the username is needed
+    from a token that is about to be revoked (e.g. logout): after the ``jti``
+    is blacklisted, the blacklist-aware decoder would reject the same token.
+
+    Args:
+        token: JWT access token string.
+
+    Returns:
+        Username or None if the token cannot be decoded.
+    """
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError as exc:
+        logger.warning("JWT decode failed", extra={"error": str(exc)})
+        return None
+
+    if payload.get("type") != "access":
+        return None
+
+    username: str | None = payload.get("sub")
+    return username
+
+
 async def decode_refresh_token(token: str) -> dict[str, Any] | None:
     """Decode and validate a JWT refresh token.
 

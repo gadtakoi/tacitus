@@ -115,16 +115,51 @@ class S3Service:
             )
         return self._client
 
+    def _list_all_objects(self) -> list[dict[str, Any]]:
+        """Fetch every object in the bucket, following S3 pagination.
+
+        ``list_objects_v2`` returns at most 1000 keys per call. Buckets with
+        more objects require following ``NextContinuationToken`` until the
+        response is flagged as truncated. Without this loop, listings and
+        statistics are silently capped at the first 1000 objects.
+
+        Returns:
+            List of raw object descriptors (``Key``, ``Size``, ...).
+
+        Raises:
+            ClientError: If S3 returns an error.
+        """
+        objects: list[dict[str, Any]] = []
+        continuation_token: str | None = None
+        client = self._get_client()
+        while True:
+            kwargs: dict[str, Any] = {"Bucket": self.bucket}
+            if continuation_token is not None:
+                kwargs["ContinuationToken"] = continuation_token
+            response = client.list_objects_v2(**kwargs)
+            objects.extend(response.get("Contents", []))
+            if not response.get("IsTruncated"):
+                break
+            continuation_token = response.get("NextContinuationToken")
+            if not continuation_token:
+                # Truncated response without a token: bail out instead of
+                # looping forever over the same page.
+                logger.error("S3 returned truncated listing without continuation token")
+                break
+        return objects
+
     def list_files(self) -> list[str]:
         """Return list of file names in bucket.
+
+        Follows S3 pagination so buckets with more than 1000 objects are
+        listed completely.
 
         Returns:
             List of object keys.
         """
         try:
-            response = self._get_client().list_objects_v2(Bucket=self.bucket)
-            contents = response.get("Contents", [])
-            return [obj["Key"] for obj in contents]
+            objects = self._list_all_objects()
+            return [obj["Key"] for obj in objects]
         except ClientError as e:
             logger.error("Failed to list files", extra={"error": str(e)})
             raise
@@ -137,7 +172,7 @@ class S3Service:
             content: File bytes.
 
         Returns:
-            Uploaded filename.
+            Sanitized filename that was used as the S3 object key.
         """
         sanitized = sanitize_filename(filename)
         try:
@@ -148,11 +183,11 @@ class S3Service:
             )
             logger.info(
                 "File uploaded",
-                extra={"file_name": filename, "bucket": self.bucket},
+                extra={"file_name": sanitized, "bucket": self.bucket},
             )
-            return filename
+            return sanitized
         except ClientError as e:
-            logger.error("Failed to upload file", extra={"file_name": filename, "error": str(e)})
+            logger.error("Failed to upload file", extra={"file_name": sanitized, "error": str(e)})
             raise
 
     def get_presigned_url(self, filename: str, expiration: int | None = None) -> str:
@@ -239,13 +274,15 @@ class S3Service:
     def get_bucket_stats(self) -> _BucketStats:
         """Return statistics for the S3 bucket.
 
+        Follows S3 pagination so statistics cover every object in the bucket,
+        not just the first 1000 returned by a single ``list_objects_v2`` call.
+
         Returns:
             Dictionary with total_files, total_size_bytes, total_size_human,
             average_size_bytes, and largest_file.
         """
         try:
-            response = self._get_client().list_objects_v2(Bucket=self.bucket)
-            contents = response.get("Contents", [])
+            contents = self._list_all_objects()
             if not contents:
                 return {
                     "total_files": 0,

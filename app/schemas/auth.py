@@ -47,6 +47,17 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Logout request.
+
+    Carries the refresh token so the server can revoke it alongside the
+    access token. Without revocation the refresh token would remain usable
+    until its natural expiration.
+    """
+
+    refresh_token: str
+
+
 class UserResponse(BaseModel):
     """User information response."""
 

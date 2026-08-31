@@ -32,6 +32,49 @@ def test_list_files_empty(mock_client: MagicMock, s3_service: S3Service) -> None
 
 
 @patch("app.services.s3_service.boto3.client")
+def test_list_files_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """Buckets with more than 1000 objects must be listed across pages."""
+    mock_client.return_value.list_objects_v2.side_effect = [
+        {
+            "Contents": [{"Key": "file1.txt"}, {"Key": "file2.txt"}],
+            "IsTruncated": True,
+            "NextContinuationToken": "token-1",
+        },
+        {
+            "Contents": [{"Key": "file3.txt"}],
+            "IsTruncated": False,
+        },
+    ]
+    files = s3_service.list_files()
+    assert files == ["file1.txt", "file2.txt", "file3.txt"]
+    # The second call must carry the continuation token
+    second_call = mock_client.return_value.list_objects_v2.call_args_list[1]
+    assert second_call.kwargs["ContinuationToken"] == "token-1"
+
+
+@patch("app.services.s3_service.boto3.client")
+def test_get_bucket_stats_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """Bucket stats must aggregate across pagination pages."""
+    mock_client.return_value.list_objects_v2.side_effect = [
+        {
+            "Contents": [{"Key": "a.txt", "Size": 256}],
+            "IsTruncated": True,
+            "NextContinuationToken": "token-1",
+        },
+        {
+            "Contents": [{"Key": "b.txt", "Size": 512}],
+            "IsTruncated": False,
+        },
+    ]
+    stats = s3_service.get_bucket_stats()
+    assert stats["total_files"] == 2
+    assert stats["total_size_bytes"] == 768
+    largest = stats["largest_file"]
+    assert largest is not None
+    assert largest["filename"] == "b.txt"
+
+
+@patch("app.services.s3_service.boto3.client")
 def test_upload_file(mock_client: MagicMock, s3_service: S3Service) -> None:
     result = s3_service.upload_file("test.txt", b"hello")
     assert result == "test.txt"

@@ -7,11 +7,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.core.ip import get_client_ip
 from app.core.rate_limit import limiter
 from app.core.security_logging import log_security_event
 from app.db.engine import get_db_session
 from app.schemas.auth import (
     LoginRequest,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -20,9 +22,9 @@ from app.schemas.auth import (
 from app.services.auth_service import (
     AuthError,
     authenticate_user,
+    clear_refresh_token,
     create_access_token,
     create_refresh_token,
-    decode_access_token,
     decode_refresh_token,
     get_refresh_token,
     is_brute_force_locked,
@@ -30,29 +32,12 @@ from app.services.auth_service import (
     register_user,
     revoke_access_token,
     store_refresh_token,
+    username_from_access_token,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
-
-
-def _get_client_ip(request: Request) -> str:
-    """Extract the client IP from the request.
-
-    Prefers the ``X-Forwarded-For`` header so the real client IP is preserved
-    when the application runs behind a reverse proxy. Falls back to the
-    direct transport address or ``unknown``.
-
-    Args:
-        request: FastAPI request.
-
-    Returns:
-        Client IP address string.
-    """
-    return request.headers.get("x-forwarded-for") or (
-        request.client.host if request.client else "unknown"
-    )
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
@@ -73,7 +58,7 @@ async def auth_register(
         Registration confirmation.
     """
     request_id = getattr(request.state, "request_id", "unknown")
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     logger.info("Registering user", extra={"request_id": request_id, "username": body.username})
     try:
         await register_user(session, body.username, body.password, client_ip)
@@ -100,7 +85,7 @@ async def auth_login(
         Access and refresh tokens.
     """
     request_id = getattr(request.state, "request_id", "unknown")
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     logger.info("Login attempt", extra={"request_id": request_id, "username": body.username})
 
     if await is_brute_force_locked(session, body.username):
@@ -184,13 +169,27 @@ async def auth_refresh(
 @router.post("/logout")
 async def auth_logout(
     request: Request,
+    body: LogoutRequest,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict[str, str]:
-    """Logout user by revoking access token.
+    """Logout user by revoking access and refresh tokens.
+
+    Both tokens issued at login must be invalidated on logout:
+
+    - The access token is revoked by putting its ``jti`` on the blacklist so
+      it stops working immediately (access tokens are short-lived anyway).
+    - The refresh token is revoked in the ``refresh_tokens`` table so it can
+      no longer be exchanged for new access tokens. Without this step the
+      refresh token would remain valid for ``jwt_refresh_expiration_days``.
+
+    The username is extracted from the access token *before* revocation:
+    ``decode_access_token`` checks the blacklist and would return ``None``
+    for an already revoked token.
 
     Args:
         request: FastAPI request.
+        body: Logout request containing the refresh token to revoke.
         credentials: Authorization header credentials.
         session: Database session.
 
@@ -204,14 +203,26 @@ async def auth_logout(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Extract the username before revocation — after the jti is blacklisted
+    # decode_access_token would reject the very same token.
+    username = username_from_access_token(credentials.credentials)
+
     await revoke_access_token(session, credentials.credentials)
-    payload = await decode_access_token(session, credentials.credentials)
-    username = payload.get("sub") if payload else None
+    refresh_revoked = await clear_refresh_token(session, body.refresh_token)
+    if not refresh_revoked:
+        # Already revoked, expired or unknown token: nothing to do, but log
+        # it for auditing purposes.
+        logger.warning(
+            "Refresh token not found or already revoked during logout",
+            extra={"request_id": request_id, "user": username},
+        )
+
     log_security_event(
         "auth.token.revoked",
-        ip=_get_client_ip(request),
+        ip=get_client_ip(request),
         user=username,
-        extra={"request_id": request_id},
+        extra={"request_id": request_id, "refresh_revoked": refresh_revoked},
     )
     return {"message": "Logged out successfully"}
 

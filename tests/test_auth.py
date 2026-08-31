@@ -165,14 +165,48 @@ async def test_token_blacklist(client: AsyncClient) -> None:
         "/auth/login", json={"username": "revokeuser", "password": _STRONG_PASSWORD}
     )
     token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
     # Access protected endpoint successfully before logout
     response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     # Logout
-    response = await client.post("/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    response = await client.post(
+        "/auth/logout",
+        json={"refresh_token": refresh_token},
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == 200
     # Token should now be invalid
     response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_logout_revokes_refresh_token(client: AsyncClient) -> None:
+    """Logout must revoke the refresh token so it can no longer be exchanged."""
+    await client.post(
+        "/auth/register", json={"username": "revokeusr2", "password": _STRONG_PASSWORD}
+    )
+    login = await client.post(
+        "/auth/login", json={"username": "revokeusr2", "password": _STRONG_PASSWORD}
+    )
+    token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
+
+    # Refresh works before logout
+    response = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert response.status_code == 200
+
+    # Logout
+    response = await client.post(
+        "/auth/logout",
+        json={"refresh_token": refresh_token},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+    # Refresh token must be rejected after logout
+    response = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert response.status_code == 401
 
 

@@ -6,6 +6,7 @@ import posixpath
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
 from app.api.dependencies import get_current_user
+from app.core.ip import get_client_ip
 from app.core.rate_limit import get_user_or_ip, limiter
 from app.core.security_logging import log_security_event
 from app.schemas.files import (
@@ -25,6 +26,44 @@ from app.services.s3_service import (
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
+
+# Maximum upload size (10 MB). Checked while streaming the request body so a
+# malicious client cannot exhaust server memory before the limit kicks in.
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+# Size of chunks read from the upload stream.
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+async def _read_upload_stream(file: UploadFile, max_size: int) -> bytes:
+    """Read an upload in bounded chunks, enforcing the size limit eagerly.
+
+    Reading the whole body first (``await file.read()``) allows a client to
+    push an arbitrarily large payload — potentially gigabytes via chunked
+    transfer encoding — into memory before any check happens. Instead this
+    helper consumes the stream in fixed chunks and aborts as soon as the
+    cumulative size exceeds ``max_size``.
+
+    Args:
+        file: Uploaded file handle.
+        max_size: Maximum allowed size in bytes.
+
+    Returns:
+        File content.
+
+    Raises:
+        HTTPException: 413 if the payload exceeds ``max_size``.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _validate_filename(filename: str) -> str:
@@ -84,11 +123,7 @@ async def upload_file(
         FileUploadResponse with uploaded filename.
     """
     request_id = getattr(request.state, "request_id", "unknown")
-    content = await file.read()
-    max_size = 10 * 1024 * 1024  # 10 MB
-    if len(content) > max_size:
-        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
-
+    content = await _read_upload_stream(file, MAX_UPLOAD_SIZE)
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=415,
@@ -109,8 +144,7 @@ async def upload_file(
 
     log_security_event(
         "file.upload",
-        ip=request.headers.get("x-forwarded-for")
-        or (request.client.host if request.client else "unknown"),
+        ip=get_client_ip(request),
         user=current_user,
         extra={"request_id": request_id, "file_name": sanitized, "size": len(content)},
     )
@@ -180,12 +214,9 @@ async def get_file_url(
     request_id = getattr(request.state, "request_id", "unknown")
     sanitized = _validate_filename(filename)
 
-    client_ip = request.headers.get("x-forwarded-for") or (
-        request.client.host if request.client else "unknown"
-    )
     log_security_event(
         "file.download",
-        ip=client_ip,
+        ip=get_client_ip(request),
         user=current_user,
         extra={"request_id": request_id, "file_name": sanitized},
     )
@@ -218,8 +249,7 @@ async def delete_file(
     sanitized = _validate_filename(filename)
     log_security_event(
         "file.delete",
-        ip=request.headers.get("x-forwarded-for")
-        or (request.client.host if request.client else "unknown"),
+        ip=get_client_ip(request),
         user=current_user,
         extra={"request_id": request_id, "file_name": sanitized},
     )
