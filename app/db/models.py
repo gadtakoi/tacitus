@@ -50,9 +50,17 @@ class Stream(Base):
     read_user: Mapped[str | None] = mapped_column(String(128), nullable=True)
     read_pass: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Timestamp when the record was created (UTC).
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC), nullable=False)
+    # ``timezone=True`` keeps the column TIMESTAMPTZ, matching the original
+    # Alembic migration; without it SQLAlchemy would emit plain TIMESTAMP
+    # on fresh ``create_all`` and naive datetimes would lose offset info.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
     # Timestamp of the last update; automatically refreshed on each update.
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,

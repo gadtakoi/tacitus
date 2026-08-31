@@ -1,23 +1,25 @@
 """MediaMTX streams monitoring router."""
 
 import logging
-import os
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.schemas.streams import StreamItem, StreamsListResponse
 
 router = APIRouter(prefix="/streams", tags=["streams"])
 logger = logging.getLogger(__name__)
 
-MTX_API_URL = os.environ.get("TACITUS_MTX_API_URL", "http://mediamtx:9997/v3")
-
 
 async def _fetch_from_mediamtx(path: str) -> dict:
     """Fetch JSON from MediaMTX Control API.
+
+    The base URL comes from ``settings.mtx_api_url`` (``TACITUS_MTX_API_URL``)
+    so it is validated by pydantic-settings and consistent with the rest of
+    the configuration.
 
     Args:
         path: API path to fetch (e.g. /paths/list).
@@ -28,7 +30,7 @@ async def _fetch_from_mediamtx(path: str) -> dict:
     Raises:
         HTTPException: If MediaMTX API is unavailable or returns error.
     """
-    url = f"{MTX_API_URL}{path}"
+    url = f"{settings.mtx_api_url}{path}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)

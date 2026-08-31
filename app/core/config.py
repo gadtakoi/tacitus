@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Database settings
     database_url: str = "postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus"
 
+    # MediaMTX Control API settings
+    mtx_api_url: str = "http://mediamtx:9997/v3"
+
     # Rate limiting storage URI.
     # Supported backends: "memory://" (default, per-process) or
     # "redis://host:port" (recommended for production and multi-instance).
