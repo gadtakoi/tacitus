@@ -146,10 +146,16 @@ async def test_failed_login_attempt_repository(db_session) -> None:
     recent = datetime.now(UTC) - timedelta(minutes=10)
     assert await repo.count_recent("target", recent) == 2
 
-    old = datetime.now(UTC) - timedelta(minutes=1)
-    cleaned = await repo.cleanup_old(old)
-    assert cleaned == 2
+    # cleanup_old removes rows with created_at <= cutoff. A cutoff in the past
+    # must leave the just-recorded attempts alone — this is the case that runs
+    # in production, where the cutoff is `now - BRUTE_FORCE_WINDOW_MINUTES`.
+    past_cutoff = datetime.now(UTC) - timedelta(minutes=1)
+    assert await repo.cleanup_old(past_cutoff) == 0
+    assert await repo.count_recent("target", recent) == 2
 
+    # A cutoff after they were written does remove them.
+    future_cutoff = datetime.now(UTC) + timedelta(minutes=1)
+    assert await repo.cleanup_old(future_cutoff) == 2
     assert await repo.count_recent("target", recent) == 0
 
 
@@ -210,8 +216,11 @@ async def test_security_event_repository(db_session) -> None:
     recent = datetime.now(UTC) - timedelta(minutes=10)
     assert await repo.count_recent_by_ip("10.0.0.1", recent) == 1
 
-    old = datetime.now(UTC) - timedelta(minutes=1)
-    cleaned = await repo.cleanup_old(old)
-    assert cleaned == 1
+    # A retention cutoff in the past must not drop a freshly written event.
+    past_cutoff = datetime.now(UTC) - timedelta(minutes=1)
+    assert await repo.cleanup_old(past_cutoff) == 0
+    assert await repo.count_recent_by_ip("10.0.0.1", recent) == 1
 
+    future_cutoff = datetime.now(UTC) + timedelta(minutes=1)
+    assert await repo.cleanup_old(future_cutoff) == 1
     assert await repo.count_recent_by_ip("10.0.0.1", recent) == 0

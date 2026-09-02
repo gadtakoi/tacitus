@@ -1,6 +1,6 @@
 """Tests for files router."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -19,7 +19,7 @@ async def _get_token(client: AsyncClient) -> str:
 @pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_list_files(mock_s3: MagicMock, client: AsyncClient) -> None:
-    mock_s3.list_files.return_value = ["file1.txt", "file2.txt"]
+    mock_s3.list_files = AsyncMock(return_value=["file1.txt", "file2.txt"])
     token = await _get_token(client)
     response = await client.get("/files/", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -29,7 +29,7 @@ async def test_list_files(mock_s3: MagicMock, client: AsyncClient) -> None:
 @pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_upload_file(mock_s3: MagicMock, client: AsyncClient) -> None:
-    mock_s3.upload_file.return_value = "test.txt"
+    mock_s3.upload_file = AsyncMock(return_value="test.txt")
     token = await _get_token(client)
     response = await client.post(
         "/files/upload",
@@ -44,7 +44,7 @@ async def test_upload_file(mock_s3: MagicMock, client: AsyncClient) -> None:
 @pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_get_file_url(mock_s3: MagicMock, client: AsyncClient) -> None:
-    mock_s3.get_presigned_url.return_value = "http://example.com/url"
+    mock_s3.get_presigned_url = AsyncMock(return_value="http://example.com/url")
     token = await _get_token(client)
     response = await client.get("/files/test.txt", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -66,7 +66,7 @@ async def test_get_file_url_not_found(mock_s3: MagicMock, client: AsyncClient) -
     """Non-existent file must return 404."""
     from app.services.s3_service import S3FileNotFoundError
 
-    mock_s3.get_presigned_url.side_effect = S3FileNotFoundError("missing.txt")
+    mock_s3.get_presigned_url = AsyncMock(side_effect=S3FileNotFoundError("missing.txt"))
     token = await _get_token(client)
     response = await client.get("/files/missing.txt", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 404
@@ -77,7 +77,7 @@ async def test_get_file_url_not_found(mock_s3: MagicMock, client: AsyncClient) -
 @patch("app.api.routers.files.s3_service")
 async def test_get_file_url_rate_limit(mock_s3: MagicMock, client: AsyncClient) -> None:
     """More than 30 download requests per minute per user returns 429."""
-    mock_s3.get_presigned_url.return_value = "http://example.com/url"
+    mock_s3.get_presigned_url = AsyncMock(return_value="http://example.com/url")
     token = await _get_token(client)
     for _ in range(30):
         response = await client.get(
@@ -97,6 +97,7 @@ async def test_get_file_url_rate_limit(mock_s3: MagicMock, client: AsyncClient) 
 @pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_delete_file(mock_s3: MagicMock, client: AsyncClient) -> None:
+    mock_s3.delete_file = AsyncMock(return_value=None)
     token = await _get_token(client)
     response = await client.delete("/files/test.txt", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -109,13 +110,15 @@ async def test_delete_file(mock_s3: MagicMock, client: AsyncClient) -> None:
 @patch("app.api.routers.files.s3_service")
 async def test_get_stats(mock_s3: MagicMock, client: AsyncClient) -> None:
     """Test fetching bucket statistics."""
-    mock_s3.get_bucket_stats.return_value = {
-        "total_files": 3,
-        "total_size_bytes": 1536,
-        "total_size_human": "1.5 KB",
-        "average_size_bytes": 512.0,
-        "largest_file": {"filename": "big.txt", "size_bytes": 1024},
-    }
+    mock_s3.get_bucket_stats = AsyncMock(
+        return_value={
+            "total_files": 3,
+            "total_size_bytes": 1536,
+            "total_size_human": "1.5 KB",
+            "average_size_bytes": 512.0,
+            "largest_file": {"filename": "big.txt", "size_bytes": 1024},
+        }
+    )
     token = await _get_token(client)
     response = await client.get("/files/stats", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -129,13 +132,15 @@ async def test_get_stats(mock_s3: MagicMock, client: AsyncClient) -> None:
 @patch("app.api.routers.files.s3_service")
 async def test_get_stats_empty(mock_s3: MagicMock, client: AsyncClient) -> None:
     """Test fetching stats for empty bucket."""
-    mock_s3.get_bucket_stats.return_value = {
-        "total_files": 0,
-        "total_size_bytes": 0,
-        "total_size_human": "0 B",
-        "average_size_bytes": 0.0,
-        "largest_file": None,
-    }
+    mock_s3.get_bucket_stats = AsyncMock(
+        return_value={
+            "total_files": 0,
+            "total_size_bytes": 0,
+            "total_size_human": "0 B",
+            "average_size_bytes": 0.0,
+            "largest_file": None,
+        }
+    )
     token = await _get_token(client)
     response = await client.get("/files/stats", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200

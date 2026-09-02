@@ -126,6 +126,13 @@ def create_access_token(data: dict[str, Any]) -> str:
 def create_refresh_token(data: dict[str, Any]) -> str:
     """Create a JWT refresh token.
 
+    The token carries a unique ``jti``. Without it the payload would be just
+    ``sub``/``exp``/``type``, which is fully determined by the user and the
+    second the token was minted: rotating twice within the same second
+    produced a byte-identical token, its hash collided with the row that had
+    just been revoked, and the client was handed a token that was already
+    dead.
+
     Args:
         data: Payload to encode. Typically contains ``sub`` (username).
 
@@ -134,7 +141,13 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     """
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_expiration_days)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update(
+        {
+            "exp": expire,
+            "type": "refresh",
+            "jti": str(uuid.uuid4()),
+        },
+    )
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -330,8 +343,12 @@ async def store_refresh_token(session: AsyncSession, token: str, username: str) 
         # row only grows the table.
         await refresh_repo.cleanup_expired()
     except AuthRepositoryError as exc:
-        # Duplicate token hash: log and continue without failing the login.
-        logger.warning("Refresh token hash collision", extra={"error": str(exc)})
+        # Every token carries a unique jti, so a hash collision means the token
+        # is not what we think it is. Continuing would hand the client a token
+        # that is not persisted — and therefore unusable for refresh — so this
+        # must fail loudly instead of being logged and ignored.
+        logger.error("Refresh token hash collision", extra={"error": str(exc)})
+        raise AppError("Failed to store refresh token", status_code=500) from exc
     except (IntegrityError, DBAPIError) as exc:
         await session.rollback()
         logger.exception("Database error while storing refresh token")

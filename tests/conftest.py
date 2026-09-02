@@ -22,11 +22,18 @@ _log_dir = tempfile.mkdtemp()
 os.environ.setdefault("TACITUS_LOG_FILE_PATH", os.path.join(_log_dir, "app.log"))
 os.environ.setdefault("TACITUS_LOG_DESTINATION", "both")
 
-# Use a dedicated test database. Override via the environment variable when
-# running against a non-default PostgreSQL instance (e.g. CI or docker compose).
+# Use a dedicated test database. The port matches the host mapping in
+# docker-compose.yml (``${POSTGRES_HOST_PORT:-15432}:5432``) — pointing at 5432
+# would silently fail to connect and skip every database test even with the
+# stack running. Create the database once with:
+#
+#   docker compose exec postgres psql -U tacitus -d tacitus \
+#     -c "CREATE DATABASE tacitus_test OWNER tacitus;"
+#
+# Override the variable when running against another instance (e.g. in CI).
 os.environ.setdefault(
     "TACITUS_DATABASE_URL",
-    "postgresql+asyncpg://tacitus:tacitus@localhost:5432/tacitus_test",
+    "postgresql+asyncpg://tacitus:tacitus@localhost:15432/tacitus_test",
 )
 
 import asyncio  # noqa: E402
@@ -36,7 +43,10 @@ import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
+import app.db.engine as app_db_engine  # noqa: E402
+from app.core import security_logging  # noqa: E402
 from app.core.rate_limit import limiter  # noqa: E402
 from app.db.engine import get_db_session  # noqa: E402
 from app.db.models import Base  # noqa: E402
@@ -46,12 +56,47 @@ TEST_DATABASE_URL = os.environ["TACITUS_DATABASE_URL"]
 
 # Engine shared by all DB-related fixtures. ``connect_args`` limits the
 # connection timeout so tests fail fast when PostgreSQL is not running.
+#
+# ``NullPool`` is required, not an optimisation choice. The engine is created
+# at import time, while each test runs in its own event loop (anyio opens one
+# per test) and ``_db_available`` uses yet another via ``asyncio.run``. A
+# pooled asyncpg connection stays bound to the loop that opened it, so reusing
+# it from the next test's loop fails — on Windows as
+# ``AttributeError: 'NoneType' object has no attribute 'send'`` from the
+# proactor. With NullPool every checkout opens a fresh connection on the
+# current loop.
 _test_engine = create_async_engine(
     TEST_DATABASE_URL,
     future=True,
     echo=False,
+    poolclass=NullPool,
     connect_args={"timeout": 5},
 )
+
+# Some code opens its own session instead of receiving one through the
+# ``get_db_session`` dependency — ``SuspiciousActivityMiddleware`` has to,
+# because observability must not ride on the request's transaction. Those
+# sessions come from the application engine, which is pooled and therefore
+# hits the same cross-event-loop problem described above: a test would pass
+# alone and fail in a full run, with the middleware swallowing
+# ``InterfaceError: another operation is in progress`` and silently writing
+# nothing. Point that engine at a NullPool for the duration of the suite.
+app_db_engine.engine = create_async_engine(
+    TEST_DATABASE_URL,
+    future=True,
+    echo=False,
+    poolclass=NullPool,
+    connect_args={"timeout": 5},
+)
+app_db_engine.AsyncSessionLocal = async_sessionmaker(
+    app_db_engine.engine,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+)
+# ``security_logging`` imported the sessionmaker by name at module load, so
+# rebinding the attribute above is not enough — patch its reference too.
+security_logging.AsyncSessionLocal = app_db_engine.AsyncSessionLocal
 
 
 def _reset_limiter_state() -> None:
@@ -71,6 +116,20 @@ def _reset_limiter_state() -> None:
     else:
         # Fallback for any other supported storage backend.
         storage.reset()
+
+
+@pytest.fixture
+def reset_rate_limits():
+    """Return a callable that clears rate-limit counters mid-test.
+
+    Brute-force tests need to make more requests than the per-IP rate limit
+    allows. Both defences answer with 429, so the counters are cleared to
+    isolate the behaviour under test.
+
+    Returns:
+        Callable resetting the configured limiter storage.
+    """
+    return _reset_limiter_state
 
 
 @pytest.fixture(autouse=True)

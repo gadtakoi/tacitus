@@ -112,17 +112,30 @@ class SuspiciousActivityMiddleware(BaseHTTPMiddleware):
                 count = await repo.count_recent_by_ip(ip, cutoff)
 
                 if count > SUSPICIOUS_THRESHOLD:
+                    details = {
+                        "count": count,
+                        "window_minutes": SUSPICIOUS_WINDOW_MINUTES,
+                        "status_code": response.status_code,
+                        "threshold": SUSPICIOUS_THRESHOLD,
+                    }
                     log_security_event(
                         "security.suspicious_activity",
                         severity="warning",
                         ip=ip,
-                        extra={
-                            "count": count,
-                            "window_minutes": SUSPICIOUS_WINDOW_MINUTES,
-                            "status_code": response.status_code,
-                            "threshold": SUSPICIOUS_THRESHOLD,
-                        },
+                        extra=details,
                     )
+                    # Also persist the detection, so the audit trail is
+                    # self-contained: the default log destination is stdout,
+                    # where a spike can be lost entirely. Written only on the
+                    # request that crosses the threshold — recording every
+                    # subsequent failure would double the write volume exactly
+                    # during an attack.
+                    if count == SUSPICIOUS_THRESHOLD + 1:
+                        await repo.record(
+                            event_type="security.suspicious_activity",
+                            ip_address=ip,
+                            details=details,
+                        )
 
                 # Best-effort periodic cleanup of stale events. The counter is
                 # process-local, so cleanup may happen more or less often in

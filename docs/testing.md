@@ -45,13 +45,26 @@ pre-commit run --all-files
 # Поднять только базу
 docker compose up -d postgres
 
-# Адрес тестовой БД (по умолчанию именно такой)
-export TACITUS_DATABASE_URL="postgresql+asyncpg://tacitus:tacitus@localhost:5432/tacitus_test"
+# Один раз создать тестовую базу
+docker compose exec postgres psql -U tacitus -d tacitus \
+  -c "CREATE DATABASE tacitus_test OWNER tacitus;"
 ```
 
-> Без запущенной PostgreSQL пропускается порядка 60 тестов — вся логика auth,
-> репозиториев и миграций. Перед мержем прогоняйте набор с базой, иначе
-> изменения в `app/db/` и `app/services/auth_service.py` остаются непроверенными.
+Адрес по умолчанию — `postgresql+asyncpg://tacitus:tacitus@localhost:15432/tacitus_test`.
+Порт **15432**, а не 5432: именно так compose пробрасывает postgres на хост
+(`${POSTGRES_HOST_PORT:-15432}:5432`). Переопределяется через
+`TACITUS_DATABASE_URL`.
+
+> Без доступной PostgreSQL пропускается порядка 60 тестов — вся логика auth,
+> репозиториев и миграций, — причём **молча**, обычным `skip`. Перед мержем
+> убеждайтесь, что в итоговой строке pytest нет `skipped`, иначе изменения в
+> `app/db/` и `app/services/auth_service.py` остаются непроверенными.
+
+Тестовый engine и engine приложения принудительно используют `NullPool`:
+каждый тест работает в собственном event loop (anyio открывает по одному на
+тест), а пулированное соединение asyncpg остаётся привязанным к тому циклу,
+в котором было создано. Без `NullPool` тест проходит поодиночке и падает в
+общем прогоне.
 
 Схема создаётся через `Base.metadata.create_all` перед каждым тестом и
 удаляется после; сессия привязана к транзакции, которая откатывается, поэтому
@@ -85,13 +98,24 @@ export TACITUS_DATABASE_URL="postgresql+asyncpg://tacitus:tacitus@localhost:5432
 
 ## Покрытие
 
-Значение покрытия измеряется **с поднятой PostgreSQL** — без неё цифра
-занижена, потому что пропущенные тесты не выполняют код `app/db` и
-`app/services/auth_service.py`.
+Текущее покрытие: **87%** (1373 statements, 185 missed) — 167 тестов, все
+проходят.
+
+Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому
+что пропущенные тесты не выполняют код `app/db` и `app/services/auth_service.py`.
 
 ```bash
 docker compose up -d postgres
 pytest tests/ --cov=app --cov-report=term-missing
 ```
+
+Самые непокрытые места на сейчас:
+
+| Модуль | Покрытие | Чего не хватает |
+|--------|----------|-----------------|
+| `api/routers/streams.py` | 36% | Ошибки MediaMTX: таймаут, 502, недоступность |
+| `db/engine.py` | 56% | Реальный `get_db_session` (в тестах подменяется) |
+| `services/auth_service.py` | 67% | Ветки обработки ошибок БД (`AppError` на `DBAPIError`) |
+| `core/exceptions.py` | 70% | Обработчики `integrity_error` / `dbapi_error` |
 
 Бейдж в `README.md` обновляется вручную по результату этой команды.

@@ -1,6 +1,6 @@
 """Tests for authentication."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -83,7 +83,7 @@ async def test_protected_endpoint_with_invalid_token(client: AsyncClient) -> Non
 @patch("app.api.routers.files.s3_service")
 async def test_protected_endpoint_with_valid_token(mock_s3: MagicMock, client: AsyncClient) -> None:
     """Test accessing protected endpoint with valid token."""
-    mock_s3.list_files.return_value = []
+    mock_s3.list_files = AsyncMock(return_value=[])
     token = await _get_token(client)
     response = await client.get("/files/", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -256,33 +256,99 @@ async def test_refresh_reuse_detected_revokes_family(client: AsyncClient) -> Non
     assert response.status_code == 401
 
 
-@pytest.mark.anyio
-async def test_brute_force_lockout(client: AsyncClient) -> None:
-    """Test account locks after 5 failed attempts."""
-    username = "bruteuser"
-    await client.post("/auth/register", json={"username": username, "password": _STRONG_PASSWORD})
-    # 5 failed attempts from different IPs to avoid rate limiter
-    for i in range(5):
-        response = await client.post(
-            "/auth/login",
-            json={"username": username, "password": "Wrong1!Pass"},
-            headers={"X-Forwarded-For": f"10.0.0.{i}"},
-        )
-        assert response.status_code == 401
-    # 6th attempt should be locked (different IP so rate limiter doesn't interfere)
+async def _fail_login(client: AsyncClient, username: str, ip: str) -> int:
+    """Attempt a login with a wrong password from the given IP.
+
+    Args:
+        client: HTTP client bound to the app.
+        username: Account to target.
+        ip: Value sent as ``X-Forwarded-For``.
+
+    Returns:
+        HTTP status code of the response.
+    """
     response = await client.post(
         "/auth/login",
         json={"username": username, "password": "Wrong1!Pass"},
-        headers={"X-Forwarded-For": "10.0.0.99"},
+        headers={"X-Forwarded-For": ip},
     )
-    assert response.status_code == 429
-    # Even correct password should be rejected while locked
+    return response.status_code
+
+
+@pytest.mark.anyio
+async def test_brute_force_locks_the_offending_ip(client: AsyncClient, reset_rate_limits) -> None:
+    """5 failures from one IP lock that (username, IP) pair."""
+    username = "brute1"
+    await client.post("/auth/register", json={"username": username, "password": _STRONG_PASSWORD})
+
+    for _ in range(5):
+        assert await _fail_login(client, username, "10.0.0.1") == 401
+
+    # The per-IP rate limit (5/min) is also exhausted now and answers 429 too;
+    # clear it so the assertion below can only be the brute-force lock.
+    reset_rate_limits()
+
     response = await client.post(
         "/auth/login",
         json={"username": username, "password": _STRONG_PASSWORD},
-        headers={"X-Forwarded-For": "10.0.0.100"},
+        headers={"X-Forwarded-For": "10.0.0.1"},
     )
     assert response.status_code == 429
+    assert "locked" in response.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_brute_force_does_not_lock_out_other_ips(
+    client: AsyncClient,
+    reset_rate_limits,
+) -> None:
+    """The per-IP threshold must not let an attacker lock the real user out.
+
+    This is why the counter is keyed on ``(username, ip)`` rather than on
+    ``username`` alone: failures sprayed from one address must leave the
+    legitimate user's own address able to log in.
+    """
+    username = "brute2"
+    await client.post("/auth/register", json={"username": username, "password": _STRONG_PASSWORD})
+
+    for _ in range(5):
+        assert await _fail_login(client, username, "10.0.0.1") == 401
+
+    reset_rate_limits()
+
+    response = await client.post(
+        "/auth/login",
+        json={"username": username, "password": _STRONG_PASSWORD},
+        headers={"X-Forwarded-For": "10.0.0.2"},
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_brute_force_global_threshold_locks_the_account(
+    client: AsyncClient,
+    reset_rate_limits,
+) -> None:
+    """20 failures spread across many IPs lock the account entirely.
+
+    Backstop against credential stuffing: no single IP reaches the per-IP
+    threshold, so only the global counter can trigger here.
+    """
+    username = "brute3"
+    await client.post("/auth/register", json={"username": username, "password": _STRONG_PASSWORD})
+
+    for i in range(20):
+        assert await _fail_login(client, username, f"10.1.0.{i}") == 401
+
+    reset_rate_limits()
+
+    response = await client.post(
+        "/auth/login",
+        json={"username": username, "password": _STRONG_PASSWORD},
+        headers={"X-Forwarded-For": "10.1.9.9"},
+    )
+    assert response.status_code == 429
+    assert "locked" in response.json()["detail"].lower()
 
 
 @pytest.mark.anyio
