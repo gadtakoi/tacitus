@@ -151,20 +151,31 @@ class RefreshTokenRepository(BaseRepository):
         return bool(result.scalar_one())
 
     async def revoke(self, token_hash: str) -> bool:
-        """Mark a refresh token as revoked.
+        """Mark an active refresh token as revoked.
+
+        The update is conditional on ``revoked_at IS NULL`` and applied in a
+        single statement, so it doubles as a mutex: when several requests
+        present the same token concurrently, exactly one of them observes a
+        non-zero ``rowcount``. Callers rely on that to distinguish a genuine
+        rotation from replay of a token that was already spent.
 
         Args:
             token_hash: SHA-256 hash of the raw token string.
 
         Returns:
-            ``True`` if a token was found and revoked, ``False`` otherwise.
+            ``True`` if this call revoked the token, ``False`` if it was
+            unknown or had already been revoked.
         """
-        token = await self.get_by_token_hash(token_hash)
-        if not token:
-            return False
-        token.revoked_at = datetime.now(UTC)
+        result = await self._session.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now(UTC)),
+        )
         await self._session.commit()
-        return True
+        return cast(CursorResult[Any], result).rowcount > 0
 
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
         """Revoke every active refresh token of a user.

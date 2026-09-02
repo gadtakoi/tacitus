@@ -35,6 +35,13 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # Number of reverse proxies (nginx, load balancers) in front of the app.
+    # Each one appends the address it saw to ``X-Forwarded-For``, so this value
+    # decides which entry of that header is trustworthy. Set to 0 when the app
+    # is exposed directly — the header is then ignored entirely, because a
+    # client can forge it. See ``app.core.ip.get_client_ip``.
+    trusted_proxy_hops: int = Field(default=1, ge=0, le=8)
+
     # Logging settings
     log_level: str = "INFO"
     log_format: str = "json"

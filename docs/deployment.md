@@ -141,6 +141,10 @@ ansible -i inventory/hosts.yml tacitus -m ping \
 
 ### Базовый деплой (HTTP, без домена)
 
+> ⚠️ Команды ниже показывают только параметры подключения. Плейбук деплоит в
+> режиме `production`, поэтому к каждой из них нужно добавить секреты из раздела
+> [«Передача секретов»](#передача-секретов) — иначе pre-check остановит деплой.
+
 Минимальная команда — только IP, логин и пароль:
 
 ```bash
@@ -211,7 +215,8 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 
 ### Передача секретов
 
-По умолчанию `.env.j2` использует dev-значения. **В production их обязательно переопределяйте:**
+Плейбук деплоит с `tacitus_environment=production`, поэтому **секреты обязаны быть
+переопределены** — иначе pre-check остановит деплой до копирования файлов:
 
 ```bash
 ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
@@ -220,8 +225,29 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   -e deploy_password=your_password \
   -e tacitus_jwt_secret="$(openssl rand -hex 32)" \
   -e tacitus_s3_access_key="$(openssl rand -hex 16)" \
-  -e tacitus_s3_secret_key="$(openssl rand -hex 32)"
+  -e tacitus_s3_secret_key="$(openssl rand -hex 32)" \
+  -e tacitus_postgres_password="$(openssl rand -hex 24)"
 ```
+
+Pre-check `Refuse to deploy production with default secrets` проверяет, что
+`tacitus_jwt_secret` не дефолтный и длиной ≥ 32 символов, что S3-ключи не
+`minioadmin`, что пароль PostgreSQL переопределён и что в CORS-origins нет `*`.
+
+Для быстрой проверки стенда без секретов можно явно снизить режим — тогда
+startup-проверки приложения отключаются, и это **не** годится для боевого хоста:
+
+```bash
+ansible-playbook ... -e tacitus_environment=development
+```
+
+> **Про имена переменных.** `docker-compose.yml` интерполирует S3-ключи и
+> параметры PostgreSQL по **безпрефиксным** именам (`S3_ACCESS_KEY`,
+> `POSTGRES_PASSWORD`, …), потому что их делят между собой сервисы `app`,
+> `minio` и `mediamtx-cleanup`. Приложение при этом читает `TACITUS_S3_*`.
+> Значения `environment:` в compose приоритетнее `env_file:`, поэтому строка
+> `TACITUS_S3_ACCESS_KEY=...` в `.env` будет **молча проигнорирована**.
+> Шаблон `.env.j2` пишет обе группы имён в правильном виде — не «чините» его,
+> добавляя префикс.
 
 > ⚠️ **Никогда не коммитьте пароли в репозиторий.** Передавайте секреты через `-e` прямо в командной строке (для разовых
 > деплоев) или через переменные окружения управляющей машины:
@@ -264,10 +290,19 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 | `tacitus_domain`        | `""`                      | Домен для сертификата                 |
 | `tacitus_email`         | `admin@example.com`       | Email для Let's Encrypt               |
 | `ssl_certbot_staging`   | `false`                   | Staging-режим Certbot                 |
-| `tacitus_jwt_secret`    | `change-me-in-production` | JWT-секрет приложения                 |
+| `tacitus_jwt_secret`    | `change-me-in-production` | JWT-секрет приложения (≥ 32 символов) |
 | `tacitus_s3_access_key` | `minioadmin`              | S3 access key                         |
 | `tacitus_s3_secret_key` | `minioadmin`              | S3 secret key                         |
 | `tacitus_deploy_dir`    | `/opt/tacitus`            | Путь установки на сервере             |
+| `tacitus_environment`   | `production`              | Режим приложения; `production` включает startup-проверки |
+| `tacitus_cors_origins`  | домен или IP хоста        | Разрешённые CORS-origins (в production нельзя `*`) |
+| `tacitus_trusted_proxy_hops` | `1`                  | Число обратных прокси перед приложением |
+| `tacitus_s3_endpoint`   | `http://minio:9000`       | Endpoint S3/MinIO                     |
+| `tacitus_s3_bucket`     | `tacitus-files`           | Bucket для файлов                     |
+| `tacitus_postgres_user` | `tacitus`                 | Пользователь PostgreSQL               |
+| `tacitus_postgres_password` | `change-me-in-production` | Пароль PostgreSQL                 |
+| `tacitus_postgres_db`   | `tacitus`                 | Имя базы данных                       |
+| `tacitus_rate_limit_storage_uri` | `redis://redis:6379` | Backend для rate limiting          |
 
 Полный список — в файлах `ansible/group_vars/all.yml` и `ansible/roles/*/defaults/main.yml`.
 
@@ -381,7 +416,9 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   ```bash
   ssh root@1.2.3.4 "cd /opt/tacitus && docker compose logs -f app"
   ```
-- Убедитесь, что JWT_SECRET ≥ 8 символов и все обязательные переменные заданы
+- Убедитесь, что `TACITUS_JWT_SECRET` ≥ **32** символов и все обязательные переменные заданы.
+  При `TACITUS_ENVIRONMENT=production` приложение намеренно падает с `RuntimeError`,
+  если секрет короче 32 символов, S3-ключи равны `minioadmin` или в CORS-origins есть `*`.
 
 **MediaMTX не проходит healthcheck**
 

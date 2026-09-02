@@ -79,6 +79,29 @@ async def test_refresh_token_repository_lifecycle(db_session) -> None:
 
 
 @pytest.mark.anyio
+async def test_refresh_token_revoke_is_single_winner(db_session) -> None:
+    """Only the first ``revoke`` of a token reports success.
+
+    ``rotate_refresh_token`` uses this to tell a real rotation apart from
+    replay of an already-spent token: the update is conditional on
+    ``revoked_at IS NULL``, so a second call must report ``False`` rather than
+    silently re-revoking and handing out another token pair.
+    """
+    user_repo = UserRepository(db_session)
+    user = await user_repo.create("revoke_race", "hash")
+
+    repo = RefreshTokenRepository(db_session)
+    expires = datetime.now(UTC) + timedelta(days=7)
+    await repo.create(user.id, "race_hash", expires)
+
+    assert await repo.revoke("race_hash") is True
+    assert await repo.revoke("race_hash") is False
+
+    # An unknown token is indistinguishable from a spent one, by design.
+    assert await repo.revoke("never_existed") is False
+
+
+@pytest.mark.anyio
 async def test_refresh_token_repository_duplicate_hash(db_session) -> None:
     """Creating two tokens with the same hash raises AuthRepositoryError."""
     user_repo = UserRepository(db_session)

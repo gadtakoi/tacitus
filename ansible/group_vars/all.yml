@@ -14,10 +14,40 @@ tacitus_domain: ""
 tacitus_enable_https: false
 tacitus_email: "admin@example.com"
 
+# Runtime environment. "production" makes the app enforce its startup checks
+# (JWT secret length, non-default S3 credentials, no wildcard CORS), so a
+# misconfigured deploy fails fast instead of running with dev defaults.
+tacitus_environment: "production"
+
+# Origins allowed by CORS. Defaults to the deployed site itself, because the
+# production startup check rejects a wildcard.
+tacitus_cors_origins: >-
+  {{ ('https://' ~ tacitus_domain) if (tacitus_enable_https and tacitus_domain)
+     else (('http://' ~ tacitus_domain) if tacitus_domain
+     else ('http://' ~ target_host)) }}
+
+# Reverse proxies in front of the app (the bundled nginx). Controls which
+# X-Forwarded-For entry is trusted as the client IP.
+tacitus_trusted_proxy_hops: 1
+
 # Secrets (override via -e for production)
 tacitus_jwt_secret: "change-me-in-production"
 tacitus_s3_access_key: "minioadmin"
 tacitus_s3_secret_key: "minioadmin"
+
+# S3/MinIO endpoint and bucket shared by the app, MinIO itself and the
+# archive-cleanup container.
+tacitus_s3_endpoint: "http://minio:9000"
+tacitus_s3_bucket: "tacitus-files"
+
+# PostgreSQL credentials. The database URL is derived from them so the app and
+# the postgres container can never drift apart.
+tacitus_postgres_user: "tacitus"
+tacitus_postgres_password: "change-me-in-production"
+tacitus_postgres_db: "tacitus"
+
+# Rate-limit counters must be shared across instances in production.
+tacitus_rate_limit_storage_uri: "redis://redis:6379"
 
 # Docker settings
 docker_user: "{{ ansible_user }}"

@@ -420,10 +420,10 @@ async def rotate_refresh_token(
         )
         raise AuthError("Refresh token reuse detected; all sessions revoked")
 
-    # Issue a fresh token pair and retire the old refresh token.
-    new_refresh_token = create_refresh_token({"sub": username})
-    await store_refresh_token(session, new_refresh_token, username)
-
+    # Retire the old refresh token FIRST. ``revoke`` is a conditional update on
+    # ``revoked_at IS NULL``, so of several requests racing with the same token
+    # exactly one gets ``True`` — and only that one is allowed to mint a new
+    # pair. Issuing the new token first would hand every racer a valid session.
     token_hash = _hash_token(old_token)
     repo = RefreshTokenRepository(session)
     try:
@@ -432,11 +432,21 @@ async def rotate_refresh_token(
         await session.rollback()
         logger.exception("Database error while rotating refresh token")
         raise AppError("Failed to rotate refresh token", status_code=500) from exc
+
     if not revoked:
-        # Concurrent rotation won the race: treat as reuse.
+        # The token was spent between the lookup above and this update: another
+        # request rotated it, or it is being replayed. Treat it as compromise.
         logger.warning("Concurrent refresh token rotation detected", extra={"user": username})
         await _revoke_all_user_tokens(session, username)
+        log_security_event(
+            "auth.refresh.reuse_detected",
+            severity="warning",
+            user=username,
+        )
         raise AuthError("Refresh token reuse detected; all sessions revoked")
+
+    new_refresh_token = create_refresh_token({"sub": username})
+    await store_refresh_token(session, new_refresh_token, username)
 
     return username, new_refresh_token
 
@@ -469,14 +479,15 @@ async def _revoke_all_user_tokens(session: AsyncSession, username: str) -> None:
 
 
 async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
-    """Remove a refresh token from storage (logout).
+    """Revoke a refresh token (logout).
 
     Args:
         session: Database session.
         token: Raw refresh token string.
 
     Returns:
-        True if a token was found and removed, False otherwise.
+        True if this call revoked an active token, False if the token was
+        unknown or had already been revoked.
     """
     token_hash = _hash_token(token)
     repo = RefreshTokenRepository(session)

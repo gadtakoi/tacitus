@@ -1,12 +1,35 @@
 """Authentication schemas."""
 
-from pydantic import BaseModel, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, Field, field_validator
+
+# Usernames are stored in VARCHAR(64) columns (``users.username`` and the
+# audit tables). Without an upper bound the database rejects the INSERT with a
+# DataError, which surfaces to the client as a 500 instead of a validation
+# error, so the limit is enforced here.
+USERNAME_MAX_LENGTH = 64
+
+Username = Annotated[
+    str,
+    Field(
+        min_length=3,
+        max_length=USERNAME_MAX_LENGTH,
+        pattern=r"^[a-zA-Z0-9._-]+$",
+        description="Letters, digits, dot, underscore and hyphen only.",
+    ),
+]
+
+# Login must not apply the registration charset rules: that would lock out any
+# account created before those rules existed. Only the length is bounded, so a
+# failed attempt can always be recorded in ``failed_login_attempts``.
+LoginUsername = Annotated[str, Field(min_length=1, max_length=USERNAME_MAX_LENGTH)]
 
 
 class RegisterRequest(BaseModel):
     """User registration request."""
 
-    username: str
+    username: Username
     password: str
 
     @field_validator("password")
@@ -29,7 +52,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     """User login request."""
 
-    username: str
+    username: LoginUsername
     password: str
 
 

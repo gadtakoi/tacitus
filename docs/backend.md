@@ -275,6 +275,7 @@ pip install -e ".[dev]"
 | `JWT_EXPIRATION_MINUTES`    | `30`                               | TTL access-токена                                        |
 | `DATABASE_URL`              | `postgresql+asyncpg://tacitus:...` | URL PostgreSQL через asyncpg                             |
 | `RATE_LIMIT_STORAGE_URI`    | `memory://`                        | Backend rate limiting (`memory://` или `redis://...`)    |
+| `TRUSTED_PROXY_HOPS`        | `1`                                | Сколько обратных прокси стоит перед приложением          |
 | `S3_ENDPOINT`               | `http://minio:9000`                | URL S3-хранилища                                         |
 | `S3_ACCESS_KEY`             | `minioadmin`                       | S3 access key                                            |
 | `S3_SECRET_KEY`             | `minioadmin`                       | S3 secret key                                            |

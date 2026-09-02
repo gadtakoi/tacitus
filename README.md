@@ -83,6 +83,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 | `TACITUS_JWT_EXPIRATION_MINUTES` | `30`                                                         | TTL access-токена                                        |
 | `TACITUS_DATABASE_URL`           | `postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus` | URL PostgreSQL через asyncpg                             |
 | `TACITUS_RATE_LIMIT_STORAGE_URI` | `memory://`                                                  | Backend rate limiting (`memory://` dev, `redis://` prod) |
+| `TACITUS_TRUSTED_PROXY_HOPS`     | `1`                                                          | Число обратных прокси перед приложением; `0` — прямой доступ |
 | `TACITUS_S3_ENDPOINT`            | `http://minio:9000`                                          | URL MinIO                                                |
 | `TACITUS_S3_ACCESS_KEY`          | `minioadmin`                                                 | MinIO access key                                         |
 | `TACITUS_S3_SECRET_KEY`          | `minioadmin`                                                 | MinIO secret key                                         |
