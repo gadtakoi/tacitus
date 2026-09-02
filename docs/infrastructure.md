@@ -6,24 +6,54 @@
 services:
   app:              # FastAPI (Uvicorn)
   nginx:            # Reverse proxy + static files
+  postgres:         # PostgreSQL 16 — пользователи, токены, security-события
+  db-migrations:    # Alembic upgrade head (init container, Exit 0)
+  redis:            # Хранилище счётчиков rate limiting
   minio:            # S3-compatible storage
-  minio-init:       # Bucket provisioning (init container)
+  minio-init:       # Bucket provisioning (init container, Exit 0)
   mediamtx:         # RTSP сервер и запись потоков
   mediamtx-cleanup: # Ротация записей и выгрузка старых сегментов в S3
 ```
+
+Порядок запуска задан через `depends_on` с условиями: `app` стартует только
+после `service_healthy` у `postgres` и `minio` и `service_completed_successfully`
+у `minio-init` и `db-migrations`.
+
+## PostgreSQL
+
+- Образ `postgres:16-alpine`
+- Креды из `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`
+- Наружу пробрасывается `${POSTGRES_HOST_PORT:-15432}` (нестандартный порт,
+  чтобы не конфликтовать с локальным PostgreSQL)
+- Данные в named volume `postgres-data`
+- Healthcheck: `pg_isready`
+
+## Redis
+
+- Используется как backend `TACITUS_RATE_LIMIT_STORAGE_URI` в production
+- Данные в named volume `redis-data`
+- Наружу не публикуется
 
 ## Nginx
 
 - Порт `80` → внешний (HTTP)
 - Порт `443` → внешний (HTTPS, опционально, через Let's Encrypt)
-- `/api/` → proxy to `app:8000/` (FastAPI routers with `/api` prefix stripped)
+- `/api/` → proxy to `app:8000/` (префикс `/api` срезается, поэтому
+  `/api/files/…` попадает в приложение как `/files/…`)
 - `/auth/` → proxy to `app:8000/auth/`
-- `/files/` → proxy to `app:8000/files/`
 - `/health` → proxy to `app:8000/health`
-- `/streams/` → proxy to `app:8000/streams/`
+- `/.env` → `deny all` + 404
+- `/.well-known/acme-challenge/` → webroot Certbot
 - `/hls/` → proxy to `mediamtx:8888` (требует `hls: yes` в `mediamtx.yml`)
 - `/webrtc/` → proxy to `mediamtx:8889` (требует `webrtc: yes` в `mediamtx.yml`)
 - `/` → static React SPA (`/usr/share/nginx/html`)
+
+> Отдельных location для `/files/` и `/streams/` **нет**: фронтенд ходит к ним
+> через `/api/`. Прямой запрос на `http://host/files/...` уйдёт в SPA-fallback.
+
+- Сервис `app` не публикует порт `8000` — приложение достижимо только через
+  nginx. На этом основана модель доверенного прокси для `X-Forwarded-For`
+  (см. `docs/security.md` → §2.7).
 
 ### HTTPS (production)
 

@@ -26,25 +26,37 @@ app/
 ├── core/
 │   ├── config.py            # Pydantic-settings (env vars)
 │   ├── exceptions.py        # AppError и обработчики
+│   ├── ip.py                # get_client_ip (trusted proxy)
 │   ├── logging_config.py    # Structured logging
-│   └── middleware.py        # RequestIdMiddleware
+│   ├── middleware.py        # RequestIdMiddleware, MaxRequestSizeMiddleware
+│   ├── rate_limit.py        # slowapi Limiter и key func
+│   ├── security_logging.py  # Security events, SuspiciousActivityMiddleware
+│   └── sentry.py            # Инициализация Sentry и фильтрация PII
 ├── db/
 │   ├── engine.py            # Async SQLAlchemy engine и session factory
 │   ├── models.py            # SQLAlchemy ORM модели
 │   └── repositories/        # Слой доступа к данным
 │       ├── auth.py          # User, RefreshToken, RevokedToken, ...
-│       └── base.py          # Базовый класс репозитория
+│       ├── base.py          # Базовый класс репозитория
+│       └── streams.py       # StreamRepository (см. примечание ниже)
 ├── schemas/
 │   ├── auth.py              # RegisterRequest, LoginRequest, TokenResponse
 │   ├── files.py             # FileUploadResponse, FileListResponse, ...
 │   ├── hello.py             # HelloWorldResponse
-│   └── streams.py           # StreamItem, StreamsListResponse
+│   ├── stats.py             # FileStat, S3StatsResponse
+│   └── streams.py           # StreamItem, StreamsListResponse, StreamConfig
 └── services/
     ├── auth_service.py      # Регистрация, логин, JWT lifecycle
     ├── hello_service.py     # Hello World business logic
     ├── s3_service.py        # CRUD операции с MinIO
-    └── stream_config_service.py  # Управление RTSP-потоками
+    └── stream_config_service.py  # Задел под CRUD потоков (не подключён)
 ```
+
+> **Примечание.** `stream_config_service.py`, `db/repositories/streams.py` и
+> схемы `StreamCreateRequest` / `StreamUpdateRequest` — подготовка к CRUD
+> потоков из `plan/PLAN_stage_8_mediamtx.md`. Ни один роутер их пока не
+> использует: `/streams/*` — это только прокси к Control API MediaMTX.
+> Таблица `streams` создаётся миграцией, но приложением не читается.
 
 ## Аутентификация
 
@@ -104,8 +116,8 @@ Flow:
 
 | Репозиторий | Назначение |
 |-------------|------------|
-| `UserRepository` | CRUD пользователей, поиск по `username`, проверка уникальности |
-| `RefreshTokenRepository` | Создание, поиск по хешу, отзыв, очистка протухших refresh-токенов |
+| `UserRepository` | Создание пользователя, поиск по `username`, проверка уникальности (update/delete не реализованы) |
+| `RefreshTokenRepository` | Создание, поиск по хешу, атомарный отзыв, очистка протухших refresh-токенов |
 | `TokenBlacklistRepository` | Идемпотентное добавление `jti` в blacklist, проверка отозванных токенов |
 | `FailedLoginAttemptRepository` | Запись неудачных входов, подсчёт за окно, очистка старых записей |
 | `SecurityEventRepository` | Запись security-событий, подсчёт по IP, очистка устаревших событий |
@@ -201,8 +213,17 @@ alembic revision --autogenerate -m "describe your change"
 - Составной индекс `(username, created_at)` для подсчёта попыток за окно.
 - Индекс на `created_at` для очистки старых записей.
 
-**Логика защиты:** если за последние 15 минут набралось 5 и более неудачных
-попыток для одного `username`, вход временно блокируется.
+**Логика защиты** (`auth_service.is_brute_force_locked`) — два порога в окне
+15 минут:
+
+- **5** неудачных попыток для пары `(username, ip_address)` — блокирует эту
+  пару. Распределённый атакующий не может заблокировать легитимного
+  пользователя, который заходит со своего IP.
+- **20** неудачных попыток для `username` с **любых** IP — глобальный
+  backstop против credential stuffing, размазанного по многим адресам.
+
+Порог считается по `created_at > cutoff`, поэтому старые записи не влияют;
+`cleanup_old` удаляет их после каждой неудачной попытки.
 
 ### `security_events`
 
@@ -225,22 +246,35 @@ Security-события: неудачные логины, подозритель
 
 ### `streams`
 
-Конфигурация RTSP/RTMP потоков (уже существующая таблица).
+Конфигурация RTSP/RTMP потоков. Таблица создаётся миграцией
+`64327e575f70`, но приложением пока не используется (см. примечание в разделе
+«Архитектура»).
 
 | Колонка | Тип | Описание |
 |---------|-----|----------|
-| `id` | `UUID` | Первичный ключ. |
-| `name` | `VARCHAR` | Уникальное имя потока. |
-| `source` | `VARCHAR` | Источник потока. |
-| `description` | `TEXT` | Описание. |
-| `created_at` | `TIMESTAMP` | Время создания. |
-| `updated_at` | `TIMESTAMP` | Время обновления. |
+| `id` | `INTEGER` | Первичный ключ, `autoincrement` (не UUID — в отличие от остальных таблиц). |
+| `name` | `VARCHAR(64)` | Имя потока, уникальный ключ `uq_stream_name`. |
+| `source` | `VARCHAR(512)` | Источник: `publisher` либо URL `rtsp://` / `rtsps://` / `rtmp://`. |
+| `record_enabled` | `BOOLEAN` | Включена ли запись/ротация архива. |
+| `publish_user` | `VARCHAR(128)` | Логин для публикации потока (опционально). |
+| `publish_pass` | `VARCHAR(128)` | Пароль для публикации (опционально). |
+| `read_user` | `VARCHAR(128)` | Логин для чтения потока (опционально). |
+| `read_pass` | `VARCHAR(128)` | Пароль для чтения (опционально). |
+| `created_at` | `TIMESTAMPTZ` | Время создания. |
+| `updated_at` | `TIMESTAMPTZ` | Время обновления. |
+
+> ⚠️ Колонки `publish_pass` / `read_pass` рассчитаны на хранение открытым
+> текстом — MediaMTX требует пароль в конфиге. Прежде чем подключать CRUD
+> потоков, решите вопрос их шифрования либо выноса в secret manager.
 
 ### Соглашения по проектированию
 
-- Все первичные ключи — `UUID` (генерируются на стороне приложения или БД).
-- Временные метки хранятся в UTC (`TIMESTAMP WITH TIME ZONE` предпочтительно,
-  но для совместимости с SQLAlchemy по умолчанию используется `DateTime`).
+- Первичные ключи — `UUID`, генерируются приложением (`default=uuid.uuid4`).
+  Исключение — `streams.id`: она создана раньше и использует `INTEGER`
+  с `autoincrement`.
+- Все временные метки — `TIMESTAMP WITH TIME ZONE` (`DateTime(timezone=True)`),
+  значения в UTC. Без `timezone=True` `create_all` выдал бы наивный
+  `TIMESTAMP` и разошёлся бы с миграциями.
 - Для часто очищаемых таблиц (`failed_login_attempts`, `security_events`,
   `revoked_tokens`) предусмотрены индексы по `created_at` / `expires_at`.
 - Внешние ключи используют `ON DELETE CASCADE` только там, где удаление
@@ -268,23 +302,34 @@ pip install -e ".[dev]"
 
 ### Переменные окружения (префикс `TACITUS_`)
 
-| Переменная                  | По умолчанию                       | Описание                                                 |
-|-----------------------------|------------------------------------|----------------------------------------------------------|
-| `JWT_SECRET`                | `change-me-in-production`          | Секрет для JWT (обязательно переопределить в production) |
-| `JWT_ALGORITHM`             | `HS256`                            | Алгоритм JWT                                             |
-| `JWT_EXPIRATION_MINUTES`    | `30`                               | TTL access-токена                                        |
-| `DATABASE_URL`              | `postgresql+asyncpg://tacitus:...` | URL PostgreSQL через asyncpg                             |
-| `RATE_LIMIT_STORAGE_URI`    | `memory://`                        | Backend rate limiting (`memory://` или `redis://...`)    |
-| `TRUSTED_PROXY_HOPS`        | `1`                                | Сколько обратных прокси стоит перед приложением          |
-| `S3_ENDPOINT`               | `http://minio:9000`                | URL S3-хранилища                                         |
-| `S3_ACCESS_KEY`             | `minioadmin`                       | S3 access key                                            |
-| `S3_SECRET_KEY`             | `minioadmin`                       | S3 secret key                                            |
-| `S3_BUCKET`                 | `tacitus-files`                    | Bucket для файлов                                        |
-| `PRESIGNED_URL_EXPIRATION`  | `300`                              | Время жизни presigned URL для скачивания (секунды)       |
-| `MTX_API_URL`               | `http://mediamtx:9997/v3`          | URL Control API MediaMTX                                 |
-| `MTX_RTSP_PORT`             | `8554`                             | Порт RTSP                                                |
-| `MTX_MAX_AGE_DAYS`          | `7`                                | Макс. возраст записей (для cleanup)                      |
-| `MTX_MAX_SIZE_GB`           | `50`                               | Макс. размер архива (для cleanup)                        |
+Ниже — поля `Settings` из `app/core/config.py`. Все читаются с префиксом
+`TACITUS_`; неизвестные переменные с этим префиксом игнорируются.
+
+| Переменная                     | По умолчанию                       | Описание                                                 |
+|--------------------------------|------------------------------------|----------------------------------------------------------|
+| `ENVIRONMENT`                  | `development`                      | `production` включает `validate_startup_settings()`      |
+| `DEBUG`                        | `false`                            | Текст исключения в ответе 500, SQL-echo                  |
+| `JWT_SECRET`                   | `dev-jwt-secret-change-me`         | Секрет для JWT (в production ≥ 32 символов)              |
+| `JWT_ALGORITHM`                | `HS256`                            | Алгоритм JWT                                             |
+| `JWT_EXPIRATION_MINUTES`       | `15`                               | TTL access-токена                                        |
+| `JWT_REFRESH_EXPIRATION_DAYS`  | `7`                                | TTL refresh-токена                                       |
+| `CORS_ORIGINS`                 | `http://localhost:3000`            | Список origins через запятую                             |
+| `DATABASE_URL`                 | `postgresql+asyncpg://tacitus:...` | URL PostgreSQL через asyncpg                             |
+| `RATE_LIMIT_STORAGE_URI`       | `memory://`                        | Backend rate limiting (`memory://` или `redis://...`)    |
+| `TRUSTED_PROXY_HOPS`           | `1`                                | Сколько обратных прокси стоит перед приложением          |
+| `S3_ENDPOINT`                  | `http://minio:9000`                | URL S3-хранилища                                         |
+| `S3_ACCESS_KEY`                | `minioadmin`                       | S3 access key                                            |
+| `S3_SECRET_KEY`                | `minioadmin`                       | S3 secret key                                            |
+| `S3_BUCKET`                    | `tacitus-files`                    | Bucket для файлов                                        |
+| `PRESIGNED_URL_EXPIRATION`     | `300`                              | Время жизни presigned URL для скачивания (секунды)       |
+| `MTX_API_URL`                  | `http://mediamtx:9997/v3`          | URL Control API MediaMTX                                 |
+| `LOG_*`                        | см. раздел «Логирование»           | Настройки логирования                                    |
+| `SENTRY_*`                     | см. раздел «Sentry»                | Настройки Sentry                                         |
+
+> `TACITUS_MTX_RTSP_PORT`, `TACITUS_MTX_MAX_AGE_DAYS`, `TACITUS_MTX_MAX_SIZE_GB`
+> и прочие `MTX_*`-порты **не являются** настройками приложения — их читает
+> `docker-compose.yml` для сервисов `mediamtx` и `mediamtx-cleanup`. Список —
+> в README, раздел «Переменные окружения».
 
 ## Логирование
 
@@ -327,8 +372,22 @@ TACITUS_LOG_FILE_PATH=/var/log/tacitus/app.log
 
 ### Security-лог
 
-Security-события (auth, file uploads, suspicious activity) дополнительно пишутся в отдельный файл
-`/var/log/tacitus/security.log` независимо от `LOG_DESTINATION`.
+Security-события (auth, file uploads, suspicious activity) идут в отдельный
+логгер `security` с `propagate = False`, поэтому в основной лог не попадают.
+
+Куда именно они пишутся, **зависит от `LOG_DESTINATION`**:
+
+| `LOG_DESTINATION` | Назначение security-событий |
+|-------------------|------------------------------|
+| `file` или `both` | `security.log` рядом с `LOG_FILE_PATH` (при недоступности каталога — fallback в stdout) |
+| `stdout` (default)| stdout; **отдельный файл не создаётся** |
+
+То есть при дефолтной конфигурации файла `/var/log/tacitus/security.log` нет —
+чтобы он появился, задайте `TACITUS_LOG_DESTINATION=file` или `both`.
+
+Отдельно от логов часть событий пишется в таблицу `security_events`, но это
+делает **только** `SuspiciousActivityMiddleware` (ответы 401/403). Вызовы
+`log_security_event` (`auth.login.failed`, `file.upload`, …) в БД не пишут.
 
 ## Sentry
 

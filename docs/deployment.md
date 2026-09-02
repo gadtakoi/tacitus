@@ -81,13 +81,19 @@ uv pip install "ansible-core>=2.21.0"
 # rsync — для ansible.posix.synchronize (синхронизация frontend/)
 sudo apt update && sudo apt install -y sshpass rsync
 
-mkdir ~/.ssh/
-ssh-keyscan -H 5.129.206.199 >> ~/.ssh/known_hosts
+mkdir -p ~/.ssh/
+ssh-keyscan -H 1.2.3.4 >> ~/.ssh/known_hosts
 
-# Inside WSL:
-cd /mnt/c/Users/BSPB/PycharmProjects/tacitus
-ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml -e target_host=11.22.33.44 -e deploy_user=root -e deploy_password="password"
+# Inside WSL — путь к репозиторию на диске C:
+cd /mnt/c/path/to/tacitus
+ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
+  -e target_host=1.2.3.4 \
+  -e deploy_user=root \
+  --ask-pass --ask-become-pass
 ```
+
+> Не подставляйте реальные адреса и пароли в примеры команд: они попадают в
+> историю shell и в репозиторий. Используйте `--ask-pass` или SSH-ключи.
 
 > **Безопасность:** не храните пароль сервера в скриптах и истории shell.
 > Предпочтительные варианты:

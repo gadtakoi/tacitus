@@ -10,6 +10,8 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Compared case-insensitively: HTTP headers arrive with their original casing
+# ("Authorization"), so an exact lowercase match would let them through.
 _SENSITIVE_KEYS = {
     "password",
     "token",
@@ -17,7 +19,25 @@ _SENSITIVE_KEYS = {
     "refresh_token",
     "jwt_secret",
     "s3_secret_key",
+    "s3_access_key",
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
 }
+
+_FILTERED = "[FILTERED]"
+
+
+def _redact(mapping: dict[str, Any]) -> None:
+    """Replace values of sensitive keys in ``mapping`` in place.
+
+    Args:
+        mapping: Dictionary to sanitize. Keys are matched case-insensitively.
+    """
+    for key in mapping:
+        if key.lower() in _SENSITIVE_KEYS:
+            mapping[key] = _FILTERED
 
 
 def _strip_sensitive_data(event: dict[str, Any], hint: Any) -> dict[str, Any] | None:
@@ -31,18 +51,16 @@ def _strip_sensitive_data(event: dict[str, Any], hint: Any) -> dict[str, Any] | 
         Sanitized event or None to drop the event.
     """
     # Strip sensitive keys from request data
-    if "request" in event:
-        request = event["request"]
+    request = event.get("request")
+    if isinstance(request, dict):
         for key in ("data", "cookies", "headers", "env"):
-            if key in request and isinstance(request[key], dict):
-                for sensitive in _SENSITIVE_KEYS:
-                    if sensitive in request[key]:
-                        request[key][sensitive] = "[FILTERED]"
+            section = request.get(key)
+            if isinstance(section, dict):
+                _redact(section)
     # Strip sensitive keys from extra context
-    if "extra" in event and isinstance(event["extra"], dict):
-        for sensitive in _SENSITIVE_KEYS:
-            if sensitive in event["extra"]:
-                event["extra"][sensitive] = "[FILTERED]"
+    extra = event.get("extra")
+    if isinstance(extra, dict):
+        _redact(extra)
     return event
 
 
@@ -67,16 +85,3 @@ def init_sentry() -> None:
             "traces_sample_rate": settings.sentry_traces_sample_rate,
         },
     )
-
-
-def set_sentry_user(username: str, request_id: str | None = None) -> None:
-    """Set user context in Sentry scope.
-
-    Args:
-        username: Authenticated username.
-        request_id: Optional request ID to attach as tag.
-    """
-    with sentry_sdk.push_scope() as scope:
-        scope.set_user({"username": username})
-        if request_id:
-            scope.set_tag("request_id", request_id)

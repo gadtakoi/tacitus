@@ -12,6 +12,15 @@ from fastapi import Request
 
 from app.core.config import settings
 
+# Attributes the logging module puts on every record. Derived from a probe
+# record rather than hardcoded, so fields added by newer Python versions are
+# excluded automatically — ``taskName`` (new in 3.12) previously leaked into
+# every JSON line as ``"taskName": null``. ``message`` and ``asctime`` are
+# added during formatting and are emitted under our own keys.
+_RESERVED_RECORD_ATTRS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", None, None).__dict__,
+) | {"message", "asctime", "request_id"}
+
 
 class JsonFormatter(logging.Formatter):
     """JSON structured log formatter."""
@@ -26,31 +35,7 @@ class JsonFormatter(logging.Formatter):
         if hasattr(record, "request_id"):
             log_data["request_id"] = record.request_id
         for key, value in record.__dict__.items():
-            if key not in (
-                "name",
-                "msg",
-                "args",
-                "levelname",
-                "levelno",
-                "pathname",
-                "filename",
-                "module",
-                "exc_info",
-                "exc_text",
-                "stack_info",
-                "lineno",
-                "funcName",
-                "created",
-                "msecs",
-                "relativeCreated",
-                "thread",
-                "threadName",
-                "processName",
-                "process",
-                "message",
-                "asctime",
-                "request_id",
-            ) and not key.startswith("_"):
+            if key not in _RESERVED_RECORD_ATTRS and not key.startswith("_"):
                 log_data[key] = value
         return json.dumps(log_data, default=str, ensure_ascii=False)
 

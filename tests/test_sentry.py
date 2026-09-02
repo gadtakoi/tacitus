@@ -1,8 +1,8 @@
 """Tests for Sentry integration."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from app.core.sentry import _strip_sensitive_data, init_sentry, set_sentry_user
+from app.core.sentry import _strip_sensitive_data, init_sentry
 
 
 def test_init_sentry_skips_when_dsn_empty() -> None:
@@ -46,10 +46,31 @@ def test_strip_sensitive_data_filters_passwords() -> None:
     assert result["extra"]["token"] == "[FILTERED]"
 
 
-def test_set_sentry_user_sets_context() -> None:
-    """set_sentry_user should set username and request_id in Sentry scope."""
-    mock_scope = MagicMock()
-    with patch("app.core.sentry.sentry_sdk.push_scope", return_value=mock_scope):
-        set_sentry_user("alice", request_id="req-42")
-        mock_scope.__enter__.return_value.set_user.assert_called_once_with({"username": "alice"})
-        mock_scope.__enter__.return_value.set_tag.assert_called_once_with("request_id", "req-42")
+def test_strip_sensitive_data_filters_authorization_header() -> None:
+    """The bearer token must never reach Sentry.
+
+    Header names keep their original casing, so matching has to be
+    case-insensitive — a lowercase-only comparison let ``Authorization``
+    through untouched.
+    """
+    event = {
+        "request": {
+            "headers": {
+                "Authorization": "Bearer eyJhbGci",
+                "Cookie": "session=abc",
+                "User-Agent": "curl/8.0",
+            },
+        },
+    }
+    result = _strip_sensitive_data(event, None)
+    assert result is not None
+    headers = result["request"]["headers"]
+    assert headers["Authorization"] == "[FILTERED]"
+    assert headers["Cookie"] == "[FILTERED]"
+    assert headers["User-Agent"] == "curl/8.0"
+
+
+def test_strip_sensitive_data_tolerates_missing_sections() -> None:
+    """An event without request/extra sections passes through unchanged."""
+    assert _strip_sensitive_data({}, None) == {}
+    assert _strip_sensitive_data({"request": None, "extra": "not-a-dict"}, None) is not None

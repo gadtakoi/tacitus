@@ -159,10 +159,9 @@ class RefreshToken(Base):
     # Relationship back to the owning user.
     user: Mapped[User] = relationship("User", back_populates="refresh_tokens")
 
-    __table_args__ = (
-        # Fast lookup of non-revoked tokens by hash.
-        Index("ix_refresh_tokens_token_hash", "token_hash"),
-    )
+    # No explicit index on ``token_hash``: ``unique=True`` already creates a
+    # unique btree index, which serves the ``WHERE token_hash = ?`` lookups
+    # used by refresh and logout. A second index would only cost writes.
 
 
 class RevokedToken(Base):
@@ -217,8 +216,10 @@ class FailedLoginAttempt(Base):
         default=uuid.uuid4,
         nullable=False,
     )
-    # Username used in the failed attempt.
-    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Username used in the failed attempt. Not indexed on its own: the
+    # composite ``(username, created_at)`` index below has ``username`` as its
+    # leftmost column and already serves lookups by username alone.
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
     # Client IP address at the moment of the attempt (optional).
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     # Exact moment of the failed attempt (UTC).

@@ -2,9 +2,9 @@
 
 ## Технологии
 
-- **React** 18
-- **TypeScript**
-- **Vite** — сборка
+- **React** 19
+- **TypeScript** 6
+- **Vite** 8 — сборка
 - **Fetch API** — HTTP клиент
 
 ## Структура

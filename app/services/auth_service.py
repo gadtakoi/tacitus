@@ -325,7 +325,9 @@ async def store_refresh_token(session: AsyncSession, token: str, username: str) 
     refresh_repo = RefreshTokenRepository(session)
     try:
         await refresh_repo.create(user.id, token_hash, expires_at)
-        # Best-effort cleanup of expired tokens for this user.
+        # Best-effort cleanup of every token past its expiry, not just this
+        # user's: an expired token can no longer be exchanged, so keeping the
+        # row only grows the table.
         await refresh_repo.cleanup_expired()
     except AuthRepositoryError as exc:
         # Duplicate token hash: log and continue without failing the login.
