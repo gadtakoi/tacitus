@@ -21,6 +21,8 @@ services:
       - TACITUS_S3_BUCKET=${S3_BUCKET:-tacitus-files}
       - TACITUS_JWT_SECRET=${TACITUS_JWT_SECRET:-change-me-in-production}
       - TACITUS_MTX_API_URL=${TACITUS_MTX_API_URL:-http://mediamtx:9997/v3}
+      - TACITUS_MTX_API_USER=${TACITUS_MTX_API_USER:-tacitus-api}
+      - TACITUS_MTX_API_PASSWORD=${TACITUS_MTX_API_PASSWORD:-dev-api-change-me}
     depends_on:
       minio:
         condition: service_healthy
@@ -145,7 +147,12 @@ services:
       - MTX_RTSPADDRESS=:${TACITUS_MTX_RTSP_PORT:-8554}
       - MTX_RTSPTRANSPORTS=${TACITUS_MTX_RTSP_TRANSPORTS:-tcp}
     ports:
-      - "${TACITUS_MTX_RTSP_PORT:-8554}:${TACITUS_MTX_RTSP_PORT:-8554}"
+      # Bound to loopback by default: RTSP carries Basic credentials in the
+      # clear (rtspEncryption is off), so the port should only be reachable by
+      # hosts the operator has deliberately allowed. Set
+      # TACITUS_MTX_RTSP_BIND=0.0.0.0 — together with a firewall rule — to let
+      # cameras on the network publish.
+      - "${TACITUS_MTX_RTSP_BIND:-127.0.0.1}:${TACITUS_MTX_RTSP_PORT:-8554}:${TACITUS_MTX_RTSP_PORT:-8554}"
     volumes:
       - ./recordings:/recordings
       - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro

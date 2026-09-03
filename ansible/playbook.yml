@@ -19,6 +19,9 @@
           - tacitus_s3_secret_key != 'minioadmin'
           - tacitus_postgres_password != 'change-me-in-production'
           - "'*' not in tacitus_cors_origins"
+          - mediamtx_publish_password != 'dev-publisher-change-me'
+          - mediamtx_read_password != 'dev-reader-change-me'
+          - mediamtx_api_password != 'dev-api-change-me'
         fail_msg: >-
           Refusing to deploy with tacitus_environment=production and default
           secrets. Pass them explicitly, e.g.:
@@ -26,7 +29,12 @@
           -e tacitus_s3_access_key="$(openssl rand -hex 16)"
           -e tacitus_s3_secret_key="$(openssl rand -hex 32)"
           -e tacitus_postgres_password="$(openssl rand -hex 24)"
-          (JWT secret must be at least 32 characters.)
+          -e mediamtx_publish_password="$(openssl rand -hex 24)"
+          -e mediamtx_read_password="$(openssl rand -hex 24)"
+          -e mediamtx_api_password="$(openssl rand -hex 24)"
+          (JWT secret must be at least 32 characters. MediaMTX credentials
+          protect RTSP publish/read and the Control API — with the defaults
+          anyone reaching the RTSP port can push and pull streams.)
         success_msg: "Production secrets have been overridden"
       when: tacitus_environment == 'production'
 

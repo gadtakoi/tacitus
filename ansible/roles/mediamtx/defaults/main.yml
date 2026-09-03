@@ -10,6 +10,23 @@ mediamtx_rtsp_transports: tcp
 mediamtx_webrtc_additional_hosts: ""
 mediamtx_api_url: "http://mediamtx:9997/v3"
 
+# Interface the RTSP port is published on. Defaults to loopback so a fresh
+# deployment is not reachable from the network until the operator decides who
+# may reach it (firewall rule, VPN, or an explicit bind address).
+mediamtx_rtsp_bind: "127.0.0.1"
+
+# MediaMTX internal users. Permissions are split by action: publisher cannot
+# read, reader cannot publish, and the API user touches neither.
+# The placeholders below are development-only — ansible/playbook.yml refuses to
+# deploy production with them. Supply real values from a vault, e.g.
+#   -e mediamtx_publish_password="$(openssl rand -hex 24)"
+mediamtx_publish_user: publisher
+mediamtx_publish_password: dev-publisher-change-me
+mediamtx_read_user: reader
+mediamtx_read_password: dev-reader-change-me
+mediamtx_api_user: tacitus-api
+mediamtx_api_password: dev-api-change-me
+
 # Archive limits
 mediamtx_max_age_days: 7
 mediamtx_max_size_gb: 50

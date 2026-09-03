@@ -96,10 +96,12 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_nginx_security.py`             | Security headers и наследование `add_header`       | нет      |
 | `test_mediamtx_archive_manager.py`   | Ротация архивов MediaMTX (age + size)              | нет      |
 | `test_startup_validation.py`         | Production-гарды `validate_startup_settings`       | нет      |
+| `test_mediamtx_security.py`          | `authInternalUsers`, разделение прав, bind RTSP    | нет      |
+| `test_streams_auth.py`               | Basic-аутентификация в MediaMTX Control API        | да       |
 
 ## Покрытие
 
-Текущее покрытие: **87%** (1376 statements, 175 missed) — 174 теста, все
+Текущее покрытие: **88%** (1384 statements, 164 missed) — 187 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому
@@ -114,8 +116,8 @@ pytest tests/ --cov=app --cov-report=term-missing
 
 | Модуль | Покрытие | Чего не хватает |
 |--------|----------|-----------------|
-| `api/routers/streams.py` | 36% | Ошибки MediaMTX: таймаут, 502, недоступность |
 | `db/engine.py` | 56% | Реальный `get_db_session` (в тестах подменяется) |
+| `api/routers/streams.py` | 67% | Ошибки MediaMTX: таймаут, недоступность, `GET /streams/{path}` |
 | `services/auth_service.py` | 67% | Ветки обработки ошибок БД (`AppError` на `DBAPIError`) |
 | `core/exceptions.py` | 70% | Обработчики `integrity_error` / `dbapi_error` |
 

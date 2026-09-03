@@ -70,11 +70,16 @@ Encrypt».
 
 - **Образ:** `bluenviron/mediamtx:1.15.1-ffmpeg` (фиксированная версия, не `latest`)
 - **Пользователь:** запуск от `1000:1000` (non-root)
-- **Порты:** наружу экспонируется только **RTSP `8554/TCP`**
+- **Порты:** наружу экспонируется только **RTSP `8554/TCP`**, по умолчанию
+  на loopback (`TACITUS_MTX_RTSP_BIND=127.0.0.1`)
 - **Протоколы:** включён только RTSP (`rtsp: yes`), ретрансляция отключена (`rtmp/hls/webrtc/srt: no`)
+- **Аутентификация:** `authInternalUsers` с разделением по действиям —
+  `publisher` (publish), `reader` (read/playback), `tacitus-api` (api).
+  См. `docs/security.md` §2.8 и ADR-012
 - **Запись:** `record: yes`, формат `fmp4`, сегментация по 1 часу
 - **Volume:** `./recordings:/recordings` (bind mount на хосте)
-- **Конфиг:** `./mediamtx/mediamtx.yml:/mediamtx.yml:ro`
+- **Конфиг:** `./mediamtx/mediamtx.yml:/mediamtx.yml:ro`, в production
+  рендерится Ansible из `mediamtx.yml.j2`
 - **Healthcheck:** `nc -z localhost 8554` (проверка доступности RTSP-порта)
 
 ## MediaMTX Cleanup
@@ -94,4 +99,7 @@ Encrypt».
 - MinIO console недоступен извне
 - Dev credentials только для локальной разработки
 - MediaMTX не открывает порты HLS/WebRTC/RTMP/SRT наружу
+- MediaMTX требует аутентификации для publish, read и Control API; анонимный
+  дефолт вытеснен явным `authInternalUsers`
+- RTSP-порт по умолчанию слушает только loopback
 - Записи хранятся в bind-mount `./recordings` с правами non-root пользователя

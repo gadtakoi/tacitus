@@ -1,6 +1,6 @@
 # Tacitus
 
-![Coverage](https://img.shields.io/badge/coverage-87%25-green)
+![Coverage](https://img.shields.io/badge/coverage-88%25-green)
 
 Tacitus — fullstack-приложение для управления файлами в S3-совместимом хранилище (MinIO) с авторизацией через JWT и
 поддержкой RTSP-потоков (MediaMTX).

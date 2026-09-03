@@ -29,6 +29,7 @@ def production_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "s3_access_key", "prod-access-key")
     monkeypatch.setattr(settings, "s3_secret_key", "prod-secret-key")
     monkeypatch.setattr(settings, "cors_origins", "https://app.example.com")
+    monkeypatch.setattr(settings, "mtx_api_password", "prod-mediamtx-password")
 
 
 def test_valid_production_settings_pass(production_settings: None) -> None:
@@ -79,6 +80,21 @@ def test_default_minio_credentials_rejected_in_production(
         validate_startup_settings()
 
 
+def test_default_mediamtx_credentials_rejected_in_production(
+    production_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MediaMTX development password aborts startup.
+
+    That password is what keeps anonymous clients from publishing to and
+    reading from the RTSP server, so shipping it to production would leave the
+    media plane effectively open.
+    """
+    monkeypatch.setattr(config_module.settings, "mtx_api_password", "dev-api-change-me")
+    with pytest.raises(RuntimeError, match="Default MediaMTX API credentials"):
+        validate_startup_settings()
+
+
 def test_wildcard_cors_rejected_in_production(
     production_settings: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -106,5 +122,6 @@ def test_development_settings_are_not_validated(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(settings, "s3_access_key", "minioadmin")
     monkeypatch.setattr(settings, "s3_secret_key", "minioadmin")
     monkeypatch.setattr(settings, "cors_origins", "*")
+    monkeypatch.setattr(settings, "mtx_api_password", "dev-api-change-me")
 
     validate_startup_settings()

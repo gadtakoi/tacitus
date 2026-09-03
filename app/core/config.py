@@ -53,8 +53,15 @@ class Settings(BaseSettings):
     # Database settings
     database_url: str = "postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus"
 
-    # MediaMTX Control API settings
+    # MediaMTX Control API settings.
+    #
+    # The Control API is protected by MediaMTX's internal auth: the user below
+    # holds the ``api`` action only and cannot publish or read media. The
+    # defaults match the development placeholders in ``mediamtx/mediamtx.yml``
+    # and are rejected for production by ``validate_startup_settings``.
     mtx_api_url: str = "http://mediamtx:9997/v3"
+    mtx_api_user: str = "tacitus-api"
+    mtx_api_password: str = "dev-api-change-me"
 
     # Rate limiting storage URI.
     # Supported backends: "memory://" (default, per-process) or
@@ -90,6 +97,13 @@ def validate_startup_settings() -> None:
             raise RuntimeError(msg)
         if settings.s3_access_key == "minioadmin" or settings.s3_secret_key == "minioadmin":
             msg = "Default MinIO credentials are not allowed in production"
+            raise RuntimeError(msg)
+        if settings.mtx_api_password == "dev-api-change-me":
+            # The same placeholder lives in mediamtx.yml. If it survived to
+            # production, the MediaMTX credentials as a whole were never
+            # rotated — and those credentials are what keep anonymous clients
+            # from publishing to and reading from the RTSP server.
+            msg = "Default MediaMTX API credentials are not allowed in production"
             raise RuntimeError(msg)
         origins = [o.strip() for o in settings.cors_origins.split(",")]
         if "*" in origins:

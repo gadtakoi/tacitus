@@ -21,6 +21,12 @@ async def _fetch_from_mediamtx(path: str) -> dict:
     so it is validated by pydantic-settings and consistent with the rest of
     the configuration.
 
+    The Control API is protected by MediaMTX's internal authentication, so the
+    request carries HTTP Basic credentials for a user that holds the ``api``
+    action only. Without them MediaMTX answers 401 for every call: its default
+    rule grants ``api`` to loopback addresses, and the backend reaches MediaMTX
+    over the Docker network.
+
     Args:
         path: API path to fetch (e.g. /paths/list).
 
@@ -28,12 +34,16 @@ async def _fetch_from_mediamtx(path: str) -> dict:
         Parsed JSON response.
 
     Raises:
-        HTTPException: If MediaMTX API is unavailable or returns error.
+        HTTPException: If MediaMTX API is unavailable, rejects our credentials
+            or returns an error.
     """
     url = f"{settings.mtx_api_url}{path}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url)
+            response = await client.get(
+                url,
+                auth=httpx.BasicAuth(settings.mtx_api_user, settings.mtx_api_password),
+            )
     except httpx.NetworkError as exc:
         logger.warning("MediaMTX API network error", exc_info=True)
         raise HTTPException(
@@ -52,10 +62,23 @@ async def _fetch_from_mediamtx(path: str) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Stream not found",
         )
-    if response.status_code >= status.HTTP_400_BAD_REQUEST:
-        logger.warning(
-            "MediaMTX API error", extra={"status": response.status_code, "body": response.text}
+    if response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+        # Our own credentials were rejected: a deployment problem, not a
+        # client one. Logged distinctly because the generic 502 below reads
+        # like MediaMTX is broken, while the actual fix is to align
+        # TACITUS_MTX_API_USER/PASSWORD with authInternalUsers in mediamtx.yml.
+        logger.error(
+            "MediaMTX API rejected backend credentials",
+            extra={"status": response.status_code, "mtx_api_user": settings.mtx_api_user},
         )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="MediaMTX API authentication failed",
+        )
+    if response.status_code >= status.HTTP_400_BAD_REQUEST:
+        # The response body is not logged: it comes from an external system and
+        # may carry arbitrary content, which does not belong in our log stream.
+        logger.warning("MediaMTX API error", extra={"status": response.status_code})
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"MediaMTX API returned {response.status_code}",

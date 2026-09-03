@@ -11,6 +11,47 @@ hls: no
 webrtc: no
 srt: no
 
+# Authentication and authorization.
+#
+# Declaring authInternalUsers REPLACES the built-in defaults. Those defaults
+# contain an anonymous entry (`user: any` with publish + read + playback on
+# every path), so leaving this section out means anyone who can reach the RTSP
+# port may push a stream into any path and pull anyone else's stream out.
+#
+# Permissions are granted per action, so a publisher cannot read, a reader
+# cannot publish, and neither can touch the Control API.
+#
+# NOTE: environment variables cannot patch the passwords below.
+# `MTX_AUTHINTERNALUSERS_<n>_PASS` appends a new entry instead of overriding
+# entry <n> of this file, so the credentials must live in the file itself.
+# In production this file is rendered by Ansible from vaulted variables
+# (ansible/roles/mediamtx/templates/mediamtx.yml.j2); the values below are
+# local-development placeholders and are rejected by the production
+# pre-check in ansible/playbook.yml.
+authInternalUsers:
+  # Cameras and other publishers push streams in.
+  - user: publisher
+    pass: dev-publisher-change-me
+    ips: []
+    permissions:
+      - action: publish
+
+  # Consumers pull streams out (live read and recorded playback).
+  - user: reader
+    pass: dev-reader-change-me
+    ips: []
+    permissions:
+      - action: read
+      - action: playback
+
+  # The Tacitus backend calls the Control API for GET /streams. It gets the
+  # api action only — it never publishes or reads media.
+  - user: tacitus-api
+    pass: dev-api-change-me
+    ips: []
+    permissions:
+      - action: api
+
 pathDefaults:
   record: yes
   recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f

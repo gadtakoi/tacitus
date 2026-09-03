@@ -210,6 +210,60 @@ IP клиента управляет rate limiting, блокировкой brute
 Реализация — `app/core/ip.py::get_client_ip`, регрессионные тесты —
 `tests/test_client_ip.py`.
 
+### 2.8 MediaMTX Authentication (RTSP и Control API)
+
+MediaMTX поставляется с **анонимным дефолтом**: без секции
+`authInternalUsers` встроенный список выдаёт `user: any` с пустым паролем
+права `publish`, `read` и `playback` на все пути. Явное объявление секции
+полностью вытесняет этот список.
+
+Учётные записи разделены по действиям, поэтому утечка одного пароля не
+открывает остальное:
+
+| Учётная запись | Действия | Кто использует |
+|---|---|---|
+| `publisher` | `publish` | Камеры и другие источники потоков |
+| `reader` | `read`, `playback` | Потребители потоков и записей |
+| `tacitus-api` | `api` | Бэкенд Tacitus для `GET /streams` |
+
+Публикация и чтение:
+
+```
+rtsp://<publisher>:<password>@host:8554/cam1   # публикация
+rtsp://<reader>:<password>@host:8554/cam1      # чтение
+```
+
+Бэкенд обращается к Control API по HTTP Basic
+(`TACITUS_MTX_API_USER` / `TACITUS_MTX_API_PASSWORD`). Отказ по 401/403
+логируется как `MediaMTX API rejected backend credentials` и возвращается
+клиенту как 502 `MediaMTX API authentication failed` — это признак
+рассинхронизации настроек приложения и `authInternalUsers`, а не проблемы
+вызывающего.
+
+> ⚠️ **RTSP передаёт Basic-credentials в открытом виде.** `rtspEncryption`
+> выключен, поэтому пароль виден на сетевом уровне. Порт `8554` по умолчанию
+> публикуется только на loopback (`TACITUS_MTX_RTSP_BIND=127.0.0.1`); для
+> камер в сети задайте bind явно **и** ограничьте доступ firewall'ом. За
+> пределами доверенного периметра требуется RTSPS или VPN.
+
+> ⚠️ **Пароли обязаны находиться в самом YAML-файле.** Переменные
+> `MTX_AUTHINTERNALUSERS_<n>_PASS` не переопределяют запись `<n>` из файла, а
+> добавляют новую (проверено на MediaMTX 1.15.1). Production-конфиг поэтому
+> рендерится Ansible из `mediamtx.yml.j2` с переменными из vault, а не
+> патчится через окружение.
+
+Барьеры против выкатки dev-паролей:
+
+1. `validate_startup_settings()` роняет приложение при
+   `TACITUS_ENVIRONMENT=production` и `mtx_api_password = dev-api-change-me`.
+2. Pre-check в `ansible/playbook.yml` отказывает в деплое при любом из трёх
+   dev-паролей MediaMTX.
+
+Конфигурации: `mediamtx/mediamtx.yml` (dev),
+`ansible/roles/mediamtx/templates/mediamtx.yml.j2` (production).
+Регрессионные тесты — `tests/test_mediamtx_security.py`,
+`tests/test_streams_auth.py`. Решение зафиксировано в ADR-012.
+
 ---
 
 ## 3. Input Validation & File Upload Security
@@ -489,6 +543,9 @@ python scripts/generate-sbom.py
 - [ ] `TACITUS_ENVIRONMENT=production`
 - [ ] `TACITUS_DEBUG=false`
 - [ ] `TACITUS_JWT_SECRET` — минимум 32 символа, не дефолт
+- [ ] MediaMTX credentials (`mediamtx_publish_password`, `mediamtx_read_password`,
+      `mediamtx_api_password`) — не dev-плейсхолдеры
+- [ ] RTSP-порт `8554` закрыт firewall'ом либо привязан к доверенному интерфейсу
 - [ ] S3 credentials — не `minioadmin`
 - [ ] HTTPS включён
 - [ ] Security headers настроены в nginx
