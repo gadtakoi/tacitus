@@ -40,10 +40,6 @@ class StreamRepository:
             name=request.name,
             source=request.source,
             record_enabled=request.record_enabled,
-            publish_user=request.credentials.publish_user if request.credentials else None,
-            publish_pass=request.credentials.publish_pass if request.credentials else None,
-            read_user=request.credentials.read_user if request.credentials else None,
-            read_pass=request.credentials.read_pass if request.credentials else None,
         )
         self._session.add(stream)
         try:
@@ -96,15 +92,6 @@ class StreamRepository:
             stream.source = request.source
         if request.record_enabled is not None:
             stream.record_enabled = request.record_enabled
-        if request.credentials is not None:
-            if request.credentials.publish_user is not None:
-                stream.publish_user = request.credentials.publish_user
-            if request.credentials.publish_pass is not None:
-                stream.publish_pass = request.credentials.publish_pass
-            if request.credentials.read_user is not None:
-                stream.read_user = request.credentials.read_user
-            if request.credentials.read_pass is not None:
-                stream.read_pass = request.credentials.read_pass
 
         stream.updated_at = datetime.now(UTC)
         await self._session.commit()

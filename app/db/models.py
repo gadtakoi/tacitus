@@ -29,8 +29,12 @@ class Base(DeclarativeBase):
 class Stream(Base):
     """Stream configuration stored in PostgreSQL.
 
-    Represents a MediaMTX stream path with optional publishing and reading
-    credentials. The ``name`` column must be unique across the table.
+    Represents a MediaMTX stream path. The ``name`` column must be unique
+    across the table.
+
+    Publish/read credentials are intentionally not stored here: MediaMTX 1.15.1
+    has no per-path credential parameters, so access is granted through the
+    global ``authInternalUsers`` list instead (ADR-012).
     """
 
     __tablename__ = "streams"
@@ -43,12 +47,6 @@ class Stream(Base):
     source: Mapped[str] = mapped_column(String(512), nullable=False, default="publisher")
     # Whether recording/archive cleanup is enabled for this stream.
     record_enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
-    # Optional RTSP/RTMP publishing credentials.
-    publish_user: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    publish_pass: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Optional credentials for reading the stream.
-    read_user: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    read_pass: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Timestamp when the record was created (UTC).
     # ``timezone=True`` keeps the column TIMESTAMPTZ, matching the original
     # Alembic migration; without it SQLAlchemy would emit plain TIMESTAMP

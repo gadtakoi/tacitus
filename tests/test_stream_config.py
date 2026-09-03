@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.streams import (
     StreamConfig,
     StreamCreateRequest,
-    StreamCredentials,
     StreamUpdateRequest,
 )
 from app.services import stream_config_service as svc
@@ -81,18 +80,17 @@ class TestStreamConfigValidation:
             StreamConfig(name="cam1", source="")
         assert "Source cannot be empty" in str(exc_info.value)
 
-    def test_credentials_defaults(self) -> None:
-        config = StreamConfig(name="cam1", source="publisher")
-        assert config.credentials.publish_user is None
-        assert config.credentials.publish_pass is None
-        assert config.credentials.read_user is None
-        assert config.credentials.read_pass is None
+    def test_schema_carries_no_credentials(self) -> None:
+        """Credentials have no place in the stream configuration schema.
 
-    def test_credentials_set(self) -> None:
-        creds = StreamCredentials(publish_user="pub", publish_pass="pubpass")
-        config = StreamConfig(name="cam1", source="publisher", credentials=creds)
-        assert config.credentials.publish_user == "pub"
-        assert config.credentials.publish_pass == "pubpass"
+        MediaMTX 1.15.1 has no per-path credential parameters — access comes
+        from the global ``authInternalUsers`` list (ADR-012). Accepting these
+        fields again would reintroduce plaintext passwords that no component
+        can consume, so the schema must reject them outright.
+        """
+        config = StreamConfig(name="cam1", source="publisher")
+        for field in ("credentials", "publish_user", "publish_pass", "read_user", "read_pass"):
+            assert not hasattr(config, field), f"StreamConfig exposes {field}"
 
 
 class TestStreamCreateRequestValidation:
@@ -119,7 +117,6 @@ class TestStreamUpdateRequestValidation:
         req = StreamUpdateRequest()
         assert req.source is None
         assert req.record_enabled is None
-        assert req.credentials is None
 
     def test_partial_update(self) -> None:
         req = StreamUpdateRequest(record_enabled=False)

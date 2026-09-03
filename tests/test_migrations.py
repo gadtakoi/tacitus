@@ -31,9 +31,15 @@ async def test_alembic_upgrade_and_downgrade() -> None:
         pytest.skip(f"PostgreSQL test database is not available: {exc}")
 
     try:
-        # Start from a clean state.
+        # Start from a clean state. ``alembic_version`` is not part of the
+        # model metadata, so ``drop_all`` leaves it behind: if anything ever
+        # ran a migration against this database — a developer applying a new
+        # revision by hand, for instance — the stamp survives, ``upgrade head``
+        # decides there is nothing to do, and the test asserts against an empty
+        # schema. Dropping the stamp makes the run independent of prior state.
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
+            await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
 
         env = os.environ.copy()
         env["TACITUS_DATABASE_URL"] = TEST_DATABASE_URL

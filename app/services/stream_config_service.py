@@ -4,6 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import Stream
 from app.db.repositories.streams import StreamRepository, StreamRepositoryError
 from app.schemas.streams import StreamConfig, StreamCreateRequest, StreamUpdateRequest
 
@@ -125,20 +126,19 @@ async def stream_exists(db: AsyncSession, name: str) -> bool:
     return model is not None
 
 
-def _to_schema(model) -> StreamConfig:
-    """Convert SQLAlchemy Stream model to Pydantic StreamConfig schema."""
-    from app.schemas.streams import StreamCredentials
+def _to_schema(model: Stream) -> StreamConfig:
+    """Convert SQLAlchemy Stream model to Pydantic StreamConfig schema.
 
+    Args:
+        model: Stream row loaded from the database.
+
+    Returns:
+        Transport representation of the stream configuration.
+    """
     return StreamConfig(
         name=model.name,
         source=model.source,
         record_enabled=model.record_enabled,
-        credentials=StreamCredentials(
-            publish_user=model.publish_user,
-            publish_pass=model.publish_pass,
-            read_user=model.read_user,
-            read_pass=model.read_pass,
-        ),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )

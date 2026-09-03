@@ -74,13 +74,20 @@
   - [ ] Вынести `commit()` из репозиториев на уровень сервиса/зависимости.
   - [ ] Добавить тест на атомарность ротации refresh-токена.
 
-- [ ] **A-06. Мёртвая фича stream config и пароли в открытом виде.**
+- [x] **A-06. Мёртвая фича stream config и пароли в открытом виде.**
   `services/stream_config_service.py`, `db/repositories/streams.py`, таблица
   `streams` и `StreamCredentials` (~250 строк) не подключены ни к одному
   роутеру и используются только тестами; `publish_pass`/`read_pass` хранятся
   plaintext и возвращаются в `StreamConfig`.
-  - [ ] Решить: удалить слой либо довести до API (см. A-01).
-  - [ ] Если оставляем — не хранить пароли plaintext и не отдавать наружу.
+  - [x] Решить: удалить слой либо довести до API (см. A-01).
+    **Решение владельца проекта:** убрать только credentials, задел под CRUD
+    оставить — он остаётся основанием для `PLAN_stage_8_mediamtx.md` §3.1.2.
+  - [x] Не хранить пароли plaintext и не отдавать наружу — поля удалены из
+    модели, схем и БД (миграция `b2d8f6a3c714`), ADR-013.
+  - [x] **Установленный факт:** в MediaMTX 1.15.1 нет per-path
+    `publishUser`/`publishPass`/`readUser`/`readPass` (проверено по
+    `GET /v3/config/pathdefaults/get`: 82 параметра, из auth-related только
+    SRT-passphrases). Колонки описывали несуществующий контракт.
 
 - [x] **A-07. Падающий тест миграций.**
   `tests/test_migrations.py` вызывает `subprocess.run(["alembic", ...])` —
@@ -170,6 +177,17 @@
   - [ ] `_to_schema(model)` без аннотации типа и с локальным импортом уже
     импортированного `StreamConfig`.
 
+- [ ] **A-22. Расхождение в план-документах** (обнаружено при A-06).
+  `plan/PLAN_INIT.md:8` утверждает «План `plan/PLAN_stage_8_mediamtx.md`
+  выполнен», тогда как в самом файле отмечен 1 пункт из 77: CRUD-эндпоинтов
+  потоков, страницы UI и RTSPS не существует.
+  - [ ] Привести `PLAN_INIT.md` в соответствие с фактом либо закрыть stage 8.
+  - [ ] Отметить в stage 8 пункты §3.1.1, фактически выполненные в stage 9
+    (PostgreSQL, SQLAlchemy, модели, Alembic, репозитории).
+  - [ ] Переписать §3.1.3: per-path credentials в MediaMTX 1.15.1 не
+    существуют, управление доступом нужно проектировать через
+    `authInternalUsers` (ADR-012, ADR-013).
+
 ### 3.4. Отдельно (не требуется правилами)
 
 - [ ] **A-20.** В проекте нет `CONTEXT.md` с доменным словарём. При смешанной
@@ -204,4 +222,8 @@
 | 2026-09-03 | A-01 | Явный `authInternalUsers` в `mediamtx/mediamtx.yml` и в ansible-шаблоне: `publisher` (publish), `reader` (read/playback), `tacitus-api` (api). Бэкенд ходит в Control API с HTTP Basic (`TACITUS_MTX_API_USER/PASSWORD`), 401/403 логируется отдельно и отдаётся как 502 `MediaMTX API authentication failed`. RTSP-порт по умолчанию биндится на `127.0.0.1` (`TACITUS_MTX_RTSP_BIND`). Гарды против dev-паролей: `validate_startup_settings()` + pre-check в `ansible/playbook.yml`. Новые тесты `test_mediamtx_security.py` (8) и `test_streams_auth.py` (4). ADR-012, `docs/security.md` §2.8, `docs/infrastructure.md`. Покрытие `streams.py` 36% → 67%, `config.py` 78% → 100% |
 | 2026-09-03 | A-01 | Проверено на живом стеке (MediaMTX 1.15.1): анонимные publish/read/api → 401; `publisher` публикует, но читать не может → 401; `reader` читает живой поток; `GET /streams` через nginx → 200 (до изменения 502). Негативная проверка самих тестов: три варианта плохого конфига (нет секции, запись `any`, единый всемогущий аккаунт) отлавливаются |
 | 2026-09-03 | — | Контрольный прогон: `pytest tests/` — 174 passed (было 166 passed + 1 failed); покрытие 87% (1376 stmts, 175 missed); `ruff check` и `ruff format --check` — чисто. Обновлены `docs/testing.md` (число тестов, таблица файлов) |
+| 2026-09-03 | A-06 | Удалены `StreamCredentials` и поле `credentials` из `StreamConfig`/`StreamCreateRequest`/`StreamUpdateRequest`; из модели `Stream` убраны `publish_user`/`publish_pass`/`read_user`/`read_pass`; миграция `b2d8f6a3c714` (upgrade/downgrade проверены на тестовой БД, колонки уходят и возвращаются). Задел под CRUD сохранён по решению владельца. Попутно `_to_schema` получил аннотацию типа и лишился локального импорта (часть A-19). ADR-013, `docs/backend.md` |
+| 2026-09-03 | A-07 | Доработка: `test_migrations.py` теперь дропает `alembic_version` перед прогоном. Тест зависел от предыдущего состояния БД — после ручного `alembic upgrade` он падал, потому что `Base.metadata.drop_all` не удаляет таблицу версий и upgrade считал базу уже на head. Проверено двумя подряд прогонами |
+| 2026-09-03 | A-22 | Новый пункт: `PLAN_INIT.md` объявляет stage 8 выполненным, в самом файле отмечен 1 пункт из 77 |
 | 2026-09-03 | — | Итоговый прогон после A-01: `pytest tests/` — **187 passed**; покрытие **88%** (1384 stmts, 164 missed); `ruff check app tests`, `ruff format --check app tests`, `mypy app tests` — чисто |
+| 2026-09-03 | — | Итоговый прогон после A-06: `pytest tests/` — **186 passed** (минус 1 тест: два теста credentials заменены одним, проверяющим их отсутствие); покрытие **89%** (1363 stmts, 156 missed); `ruff`, `mypy` — чисто. `repositories/streams.py` — 100% |

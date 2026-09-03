@@ -46,24 +46,22 @@ class StreamsListResponse(BaseModel):
     items: list[StreamItem]
 
 
-class StreamCredentials(BaseModel):
-    """Publish/read credentials for a stream path."""
-
-    publish_user: str | None = Field(default=None, min_length=1, max_length=128)
-    publish_pass: str | None = Field(default=None, min_length=1, max_length=128)
-    read_user: str | None = Field(default=None, min_length=1, max_length=128)
-    read_pass: str | None = Field(default=None, min_length=1, max_length=128)
-
-
 class StreamConfig(BaseModel):
-    """Full stream configuration stored in Tacitus."""
+    """Full stream configuration stored in Tacitus.
+
+    Publish/read credentials are deliberately absent. MediaMTX 1.15.1 has no
+    per-path ``publishUser``/``publishPass``/``readUser``/``readPass``
+    parameters — access is granted through the global ``authInternalUsers``
+    list, where each entry carries ``permissions[].path``. Storing credentials
+    here would mean keeping plaintext passwords that nothing can consume.
+    See ADR-012 for the authentication model.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
     name: Annotated[str, Field(min_length=1, max_length=64)]
     source: str = Field(default="publisher", max_length=512)
     record_enabled: bool = True
-    credentials: StreamCredentials = Field(default_factory=StreamCredentials)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -105,7 +103,6 @@ class StreamCreateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=64)]
     source: str = Field(default="publisher", max_length=512)
     record_enabled: bool = True
-    credentials: StreamCredentials | None = None
 
     @field_validator("name")
     @classmethod
@@ -138,7 +135,6 @@ class StreamUpdateRequest(BaseModel):
 
     source: str | None = Field(default=None, max_length=512)
     record_enabled: bool | None = None
-    credentials: StreamCredentials | None = None
 
     @field_validator("source")
     @classmethod
