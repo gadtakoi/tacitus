@@ -7,6 +7,7 @@ disappear. It is skipped automatically when PostgreSQL is not reachable.
 
 import os
 import subprocess
+import sys
 
 import pytest
 from sqlalchemy import text
@@ -37,9 +38,14 @@ async def test_alembic_upgrade_and_downgrade() -> None:
         env = os.environ.copy()
         env["TACITUS_DATABASE_URL"] = TEST_DATABASE_URL
 
-        # Apply all migrations.
+        # Apply all migrations. Alembic is invoked through ``sys.executable``
+        # rather than as a bare ``alembic`` command: the console script lives in
+        # the virtualenv's Scripts/bin directory, which is not on PATH unless the
+        # environment was activated. Running ``python -m pytest`` from the
+        # interpreter directly is the normal case, and there the bare command
+        # fails with FileNotFoundError instead of testing anything.
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
             env=env,
@@ -66,7 +72,7 @@ async def test_alembic_upgrade_and_downgrade() -> None:
 
         # Revert all migrations.
         result = subprocess.run(
-            ["alembic", "downgrade", "base"],
+            [sys.executable, "-m", "alembic", "downgrade", "base"],
             capture_output=True,
             text=True,
             env=env,

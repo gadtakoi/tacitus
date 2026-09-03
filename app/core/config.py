@@ -78,6 +78,13 @@ def validate_startup_settings() -> None:
         RuntimeError: If production settings are insecure.
     """
     if settings.environment == "production":
+        if settings.debug:
+            # Debug mode leaks internals twice over: ``generic_exception_handler``
+            # returns ``str(exc)`` to the client, and ``create_async_engine`` is
+            # created with ``echo=True``, which writes every statement — bind
+            # parameters included — to the logs.
+            msg = "Debug mode must be disabled in production"
+            raise RuntimeError(msg)
         if len(settings.jwt_secret) < 32:
             msg = "JWT secret must be at least 32 characters in production"
             raise RuntimeError(msg)

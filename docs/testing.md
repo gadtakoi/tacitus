@@ -95,10 +95,11 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_sentry.py`                     | Инициализация и фильтрация PII                     | нет      |
 | `test_nginx_security.py`             | Security headers и наследование `add_header`       | нет      |
 | `test_mediamtx_archive_manager.py`   | Ротация архивов MediaMTX (age + size)              | нет      |
+| `test_startup_validation.py`         | Production-гарды `validate_startup_settings`       | нет      |
 
 ## Покрытие
 
-Текущее покрытие: **87%** (1373 statements, 185 missed) — 167 тестов, все
+Текущее покрытие: **87%** (1376 statements, 175 missed) — 174 теста, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому

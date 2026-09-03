@@ -163,9 +163,15 @@ Production-рекомендации:
 При `TACITUS_ENVIRONMENT=production` приложение падает с `RuntimeError`, если
 (`app/core/config.py::validate_startup_settings`):
 
+- `debug` включён (`TACITUS_DEBUG=true`);
 - `jwt_secret` короче 32 символов;
 - `s3_access_key` или `s3_secret_key` равны `minioadmin`;
 - `cors_origins` содержит `*`.
+
+> Проверка `debug` закрывает сразу два канала утечки: `generic_exception_handler`
+> в debug-режиме возвращает клиенту текст исключения (§4.3), а
+> `create_async_engine(echo=settings.debug)` пишет в логи каждый SQL-запрос
+> вместе с bind-параметрами.
 
 > Проверки на конкретное значение секрета нет — только на длину. Дефолт
 > `dev-jwt-secret-change-me` (24 символа) и compose-дефолт
@@ -261,7 +267,8 @@ ALLOWED_TYPES = {
 ### 4.3 Error Handling
 
 - В production generic 500 возвращает безопасное сообщение `"Internal server error"` без stack trace.
-- В debug-режиме (`TACITUS_DEBUG=true`) возвращается текст исключения.
+- В debug-режиме (`TACITUS_DEBUG=true`) возвращается текст исключения. Поэтому
+  при `TACITUS_ENVIRONMENT=production` debug запрещён на старте (§2.6).
 
 ---
 
@@ -390,6 +397,25 @@ cd frontend && npm audit --audit-level=moderate
 pip-compile --generate-hashes pyproject.toml -o requirements.txt
 ```
 
+#### Результат аудита от 2026-09-03
+
+`pip-audit -r requirements.txt` — **14 известных уязвимостей в 5 пакетах**.
+Устранение запланировано в `plan/PLAN_stage_10_audit.md` (пункт A-21).
+
+| Пакет | Версия | ID | Fix | Применимость к Tacitus |
+|---|---|---|---|---|
+| `starlette` | 1.2.1 | PYSEC-2026-249 | 1.3.1 | **Высокая.** `request.form()` не применяет границы `max_fields` / `max_part_size` — прямо касается `POST /files/upload` |
+| `starlette` | 1.2.1 | PYSEC-2026-248 | 1.3.0 | Средняя. `request.url` восстанавливается из невалидированного пути |
+| `cryptography` | 48.0.0 | GHSA-537c-gmf6-5ccf | 48.0.1 | Средняя. Статически слинкованный OpenSSL в wheel |
+| `cryptography` | 48.0.0 | PYSEC-2026-3552/3553/3554 | 49.0.0 / 50.0.0 | Низкая. Проверка цепочек сертификатов и PKCS#7 в приложении не используется |
+| `pyasn1` | 0.6.3 | PYSEC-2026-3455/3456/3457 | 0.6.4 | Низкая. Транзитивно через `python-jose`; ASN.1 из недоверенного ввода не разбирается |
+| `pydantic-settings` | 2.14.1 | GHSA-4xgf-cpjx-pc3j | 2.14.2 | Низкая. Затрагивает `NestedSecretsSettingsSource` с `secrets_nested_subdir=True` — не используется |
+| `ecdsa` | 0.19.2 | PYSEC-2026-1325 | **нет** | Принятый риск. Minerva timing attack на P-256; Tacitus подписывает JWT алгоритмом HS256 (HMAC), ECDSA-путь не задействован |
+
+> ⚠️ Аудит проверяет `requirements.txt`, но `Dockerfile` собирает образ из
+> `pyproject.toml` без хешей (см. `plan/PLAN_stage_10_audit.md`, пункт A-02),
+> поэтому версии в образе могут отличаться от проверенных.
+
 ### 8.2 SBOM
 
 Генерация SBOM:
@@ -461,6 +487,7 @@ python scripts/generate-sbom.py
 ## 11. Deployment Security Checklist
 
 - [ ] `TACITUS_ENVIRONMENT=production`
+- [ ] `TACITUS_DEBUG=false`
 - [ ] `TACITUS_JWT_SECRET` — минимум 32 символа, не дефолт
 - [ ] S3 credentials — не `minioadmin`
 - [ ] HTTPS включён
