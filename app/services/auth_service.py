@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
+# Hash used to burn the same CPU time when the account does not exist — see
+# ``authenticate_user``. Produced by the same context as real password hashes,
+# so it carries the same scheme and cost parameters; a hardcoded constant would
+# drift the moment those change. Computed once at import, not per request.
+_DUMMY_PASSWORD_HASH = pwd_context.hash("password-that-is-never-valid")
+
 # Brute-force protection constants.
 BRUTE_FORCE_WINDOW_MINUTES = 15
 BRUTE_FORCE_MAX_ATTEMPTS = 5
@@ -706,6 +712,14 @@ async def authenticate_user(
 ) -> dict[str, Any] | None:
     """Authenticate user by username and password.
 
+    Every outcome — unknown account, disabled account, wrong password —
+    performs exactly one password verification, so the three are not
+    distinguishable by response time.
+
+    The remaining difference is the database lookup itself, which is orders of
+    magnitude cheaper than a pbkdf2 round; this is not constant-time
+    authentication, only enough to remove the signal that mattered.
+
     Args:
         session: Database session.
         username: Username.
@@ -724,9 +738,12 @@ async def authenticate_user(
         logger.exception("Database error while authenticating user")
         raise AppError("Failed to authenticate user", status_code=500) from exc
 
-    if user is None:
-        return None
-    if not user.is_active:
+    if user is None or not user.is_active:
+        # Verify against a throwaway hash so an unknown or disabled account
+        # costs the same as a wrong password. Skipping the check here made the
+        # response measurably faster — pbkdf2 is deliberately slow — which is
+        # enough to enumerate valid usernames without ever guessing one right.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
         return None
     if not verify_password(password, user.password_hash):
         return None
