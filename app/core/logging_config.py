@@ -4,6 +4,7 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import sys
 import uuid
 from typing import Any
@@ -20,6 +21,17 @@ from app.core.config import settings
 _RESERVED_RECORD_ATTRS = frozenset(
     logging.LogRecord("", 0, "", 0, "", None, None).__dict__,
 ) | {"message", "asctime", "request_id"}
+
+# Bound for an inbound ``X-Request-Id``. Comfortably fits the formats that
+# actually appear in this position — a UUID (36), nginx's ``$request_id``
+# (32 hex), a W3C ``traceparent`` (55) — while keeping an unbounded string out
+# of every log line.
+_MAX_REQUEST_ID_LENGTH = 64
+
+# ``fullmatch`` is used rather than ``match`` with ``$``: ``$`` also matches
+# just before a trailing newline, so ``"abc\n"`` would slip through and let a
+# client append a forged line to the plain-text log format.
+_SAFE_REQUEST_ID = re.compile(rf"[A-Za-z0-9._-]{{1,{_MAX_REQUEST_ID_LENGTH}}}")
 
 
 class JsonFormatter(logging.Formatter):
@@ -148,13 +160,21 @@ def setup_logging() -> None:
 def get_request_id(request: Request) -> str:
     """Extract or generate request_id from request headers.
 
+    An inbound ``X-Request-Id`` is honoured so a request can be correlated
+    across systems, but the value is attacker-controlled and ends up in three
+    places that make it dangerous unsanitised: every log line, the
+    ``x-request-id`` response header, and error response bodies. It is
+    therefore accepted only when it is short and made of characters that
+    cannot forge a log record — otherwise a fresh UUID is generated and the
+    supplied value is discarded.
+
     Args:
         request: FastAPI request object.
 
     Returns:
-        Request ID string.
+        The client-supplied ID when it is well-formed, otherwise a new UUID4.
     """
     header_request_id = request.headers.get("x-request-id")
-    if header_request_id:
+    if header_request_id and _SAFE_REQUEST_ID.fullmatch(header_request_id):
         return header_request_id
     return str(uuid.uuid4())

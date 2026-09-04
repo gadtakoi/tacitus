@@ -102,10 +102,11 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_dockerfile_pinning.py`         | Сборка образа по лок-файлу с хешами                | нет      |
 | `test_transaction_boundaries.py`     | Атомарность ротации токена, durability аудита      | да       |
 | `test_streams_router.py`             | Отказы MediaMTX, контракт ответа, rate limit       | да       |
+| `test_request_id.py`                 | Валидация `X-Request-Id`, log/header injection     | да       |
 
 ## Покрытие
 
-Текущее покрытие: **90%** (1383 statements, 140 missed) — 215 тестов, все
+Текущее покрытие: **90%** (1386 statements, 140 missed) — 233 теста, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому
