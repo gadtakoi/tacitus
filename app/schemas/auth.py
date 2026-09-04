@@ -25,12 +25,27 @@ Username = Annotated[
 # failed attempt can always be recorded in ``failed_login_attempts``.
 LoginUsername = Annotated[str, Field(min_length=1, max_length=USERNAME_MAX_LENGTH)]
 
+# Upper bound for a new password. Generous for humans and password managers
+# alike; the point is that the field is bounded at all.
+PASSWORD_MAX_LENGTH = 128
+
+# Login accepts more than registration, for the same reason ``LoginUsername``
+# is laxer than ``Username``: an account created before this bound existed must
+# still be able to sign in. 4096 is passlib's own ``MAX_PASSWORD_SIZE``, so no
+# password that could ever have been hashed is rejected here — while anything
+# above it, which passlib answers with ``PasswordSizeError``, is turned into a
+# 422 instead of an unhandled 500.
+LOGIN_PASSWORD_MAX_LENGTH = 4096
+
+NewPassword = Annotated[str, Field(max_length=PASSWORD_MAX_LENGTH)]
+LoginPassword = Annotated[str, Field(max_length=LOGIN_PASSWORD_MAX_LENGTH)]
+
 
 class RegisterRequest(BaseModel):
     """User registration request."""
 
     username: Username
-    password: str
+    password: NewPassword
 
     @field_validator("password")
     @classmethod
@@ -53,7 +68,7 @@ class LoginRequest(BaseModel):
     """User login request."""
 
     username: LoginUsername
-    password: str
+    password: LoginPassword
 
 
 class TokenResponse(BaseModel):

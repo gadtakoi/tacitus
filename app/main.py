@@ -1,6 +1,7 @@
 """FastAPI application entrypoint."""
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -18,6 +19,7 @@ from app.core.exceptions import (
     generic_exception_handler,
     integrity_error_handler,
     rate_limit_exceeded_handler,
+    validation_error_handler,
 )
 from app.core.logging_config import setup_logging
 from app.core.middleware import MaxRequestSizeMiddleware, RequestIdMiddleware
@@ -46,6 +48,7 @@ app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-t
 app.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(DBAPIError, dbapi_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(hello_router)
 app.include_router(auth_router)

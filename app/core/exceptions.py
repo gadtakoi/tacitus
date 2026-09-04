@@ -6,7 +6,8 @@ a small, predictable set of error responses without leaking SQL details to
 clients.
 """
 
-from fastapi import Request
+from fastapi import Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -130,6 +131,40 @@ async def dbapi_error_handler(request: Request, exc: DBAPIError) -> JSONResponse
         status_code=500,
         content={
             "error": "Database error",
+            "request_id": getattr(request.state, "request_id", "unknown"),
+        },
+    )
+
+
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return validation errors without echoing the submitted value.
+
+    FastAPI's default handler includes an ``input`` field carrying whatever the
+    client sent. For ``POST /auth/register`` and ``POST /auth/login`` that is
+    the password, returned in plain text in the response body — where it
+    reaches browser devtools, client-side logs, proxies and error trackers.
+
+    ``loc`` and ``msg`` already tell the caller which field failed and why, so
+    the echo is dropped for every field rather than maintained as a list of
+    sensitive names: a new secret-bearing field would otherwise start leaking
+    the day it is added. ``ctx`` goes too — it can carry the original value in
+    its error payload.
+
+    Args:
+        request: FastAPI request object.
+        exc: Validation error raised while parsing the request.
+
+    Returns:
+        JSON response with HTTP 422 and the sanitized error list.
+    """
+    sanitized = [
+        {"type": error.get("type"), "loc": error.get("loc"), "msg": error.get("msg")}
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "detail": sanitized,
             "request_id": getattr(request.state, "request_id", "unknown"),
         },
     )

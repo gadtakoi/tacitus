@@ -104,10 +104,11 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_streams_router.py`             | Отказы MediaMTX, контракт ответа, rate limit       | да       |
 | `test_request_id.py`                 | Валидация `X-Request-Id`, log/header injection     | да       |
 | `test_login_timing.py`               | Одна проверка пароля на любой исход логина         | да       |
+| `test_password_bounds.py`            | Границы длины пароля, отсутствие эха в 422         | да       |
 
 ## Покрытие
 
-Текущее покрытие: **90%** (1386 statements, 138 missed) — 239 тестов, все
+Текущее покрытие: **90%** (1396 statements, 138 missed) — 250 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому
