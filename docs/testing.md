@@ -99,7 +99,7 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_mediamtx_security.py`          | `authInternalUsers`, разделение прав, bind RTSP    | нет      |
 | `test_streams_auth.py`               | Basic-аутентификация в MediaMTX Control API        | да       |
 | `test_compose_pinning.py`            | Отсутствие установок пакетов при старте контейнеров | нет      |
-| `test_dockerfile_pinning.py`         | Сборка образа по лок-файлу с хешами                | нет      |
+| `test_dockerfile_pinning.py`         | Сборка образов по лок-файлам (Python и npm)        | нет      |
 | `test_transaction_boundaries.py`     | Атомарность ротации токена, durability аудита      | да       |
 | `test_streams_router.py`             | Отказы MediaMTX, контракт ответа, rate limit       | да       |
 | `test_request_id.py`                 | Валидация `X-Request-Id`, log/header injection     | да       |
@@ -109,7 +109,7 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 
 ## Покрытие
 
-Текущее покрытие: **91%** (1404 statements, 131 missed) — 255 тестов, все
+Текущее покрытие: **91%** (1404 statements, 131 missed) — 257 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому

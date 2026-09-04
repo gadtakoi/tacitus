@@ -10,6 +10,7 @@ These tests pin the property that closes that gap: dependencies come from the
 lockfile, with hashes enforced.
 """
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -17,6 +18,9 @@ from pathlib import Path
 DOCKERFILE = Path("Dockerfile")
 REQUIREMENTS_FILE = Path("requirements.txt")
 PYPROJECT = Path("pyproject.toml")
+NGINX_DOCKERFILE = Path("nginx/Dockerfile")
+FRONTEND_PACKAGE = Path("frontend/package.json")
+FRONTEND_LOCK = Path("frontend/package-lock.json")
 
 
 def test_build_installs_from_the_lockfile_with_hashes() -> None:
@@ -80,3 +84,46 @@ def test_lockfile_covers_every_declared_runtime_dependency() -> None:
 
     missing = sorted(declared - locked)
     assert not missing, f"declared in pyproject but absent from requirements.txt: {missing}"
+
+
+def test_frontend_build_installs_from_the_lockfile() -> None:
+    """The frontend image builds with ``npm ci``, not ``npm install``.
+
+    ``npm install`` re-resolves the dependency ranges and, with only
+    package.json copied into the image, ignored package-lock.json entirely —
+    so two builds of the same commit could ship different versions of React,
+    Vite or Mantine.
+    """
+    content = NGINX_DOCKERFILE.read_text(encoding="utf-8")
+    commands = [
+        line.strip()
+        for line in content.splitlines()
+        if line.strip().startswith("RUN") and "npm" in line
+    ]
+
+    assert any("npm ci" in line for line in commands), "frontend build does not use npm ci"
+    assert not any(re.search(r"npm\s+install", line) for line in commands), (
+        "frontend build still uses npm install, which ignores the lockfile"
+    )
+    assert "package-lock.json" in content, "package-lock.json is never copied into the image"
+
+
+def test_frontend_lockfile_agrees_with_package_json() -> None:
+    """Every declared dependency is recorded in the lockfile with the same range.
+
+    ``npm ci`` aborts when the two disagree, so a package.json edited without
+    regenerating the lock breaks the image build. Catching it here turns a
+    failed deploy into a failed test.
+    """
+    package = json.loads(FRONTEND_PACKAGE.read_text(encoding="utf-8"))
+    lock = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
+    root = lock["packages"][""]
+
+    mismatched = []
+    for section in ("dependencies", "devDependencies"):
+        for name, declared in package.get(section, {}).items():
+            locked = root.get(section, {}).get(name)
+            if locked != declared:
+                mismatched.append(f"{name}: package.json={declared} lock={locked}")
+
+    assert not mismatched, f"package-lock.json is out of date: {mismatched}"
