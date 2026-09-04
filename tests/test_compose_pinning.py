@@ -84,3 +84,61 @@ def test_cleanup_disables_the_inherited_healthcheck() -> None:
         "mediamtx-cleanup inherits the application HEALTHCHECK, which probes an "
         "HTTP server this container does not run"
     )
+
+
+# Images built from this repository — their tag is the app version, not an
+# upstream release, so they are checked separately from third-party images.
+LOCAL_IMAGES = ("tacitus-app", "tacitus-nginx")
+
+# A pinned upstream tag names an exact release: at least two numeric components
+# (16.11-alpine, 3.14.5-slim, 1.27.5-alpine) or a dated release string
+# (RELEASE.2025-04-22T22-12-26Z). A single component — 16-alpine, 7-alpine,
+# 22-alpine — is a moving target that silently changes under `docker pull`.
+_EXACT_VERSION = re.compile(r"\d+\.\d+|RELEASE\.\d{4}-\d{2}-\d{2}")
+
+
+def _image_references() -> dict[str, str]:
+    """Collect every image reference used by the stack.
+
+    Returns:
+        Mapping of source location to image reference.
+    """
+    references = {}
+    for name, service in _compose_services().items():
+        if "image" in service:
+            references[f"compose:{name}"] = service["image"]
+
+    for dockerfile in (Path("Dockerfile"), Path("nginx/Dockerfile")):
+        for line in dockerfile.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"FROM\s+(\S+)", line.strip())
+            if match:
+                references[f"{dockerfile}:{match.group(1)}"] = match.group(1)
+    return references
+
+
+def test_no_image_uses_the_latest_tag() -> None:
+    """Nothing runs on ``latest`` or on an implicit tag."""
+    offenders = [
+        f"{where} -> {image}"
+        for where, image in _image_references().items()
+        if image.endswith(":latest") or ":" not in image
+    ]
+    assert not offenders, f"images without an explicit tag: {offenders}"
+
+
+def test_upstream_images_are_pinned_to_an_exact_release() -> None:
+    """Third-party images name a full version, not a moving major tag.
+
+    ``postgres:16-alpine`` is not ``latest``, but it still moves: a rebuild
+    months later brings a different PostgreSQL patch release with no change in
+    the repository.
+    """
+    offenders = []
+    for where, image in _image_references().items():
+        name, _, tag = image.partition(":")
+        if name in LOCAL_IMAGES or name.startswith("tacitus"):
+            continue
+        if not _EXACT_VERSION.search(tag):
+            offenders.append(f"{where} -> {image}")
+
+    assert not offenders, f"images pinned only to a moving tag: {offenders}"

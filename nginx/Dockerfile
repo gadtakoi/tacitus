@@ -1,5 +1,5 @@
 # Frontend build stage
-FROM node:22-alpine AS frontend-builder
+FROM node:22.23.2-alpine AS frontend-builder
 WORKDIR /app
 
 # `npm ci` installs exactly the tree pinned in package-lock.json and refuses to

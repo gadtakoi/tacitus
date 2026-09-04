@@ -1,5 +1,5 @@
 # Build stage
-FROM python:3.14-slim AS builder
+FROM python:3.14.5-slim AS builder
 
 WORKDIR /build
 
@@ -18,7 +18,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 # Runtime stage
-FROM python:3.14-slim AS runtime
+FROM python:3.14.5-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

@@ -222,7 +222,10 @@ services:
           memory: 64M
 
   postgres:
-    image: postgres:16-alpine
+    # Точный патч-тег, а не `16-alpine`: плавающий тег молча подменял версию
+    # СУБД при `docker compose pull`, то есть окружение переставало быть
+    # воспроизводимым. Обновление версии — осознанное изменение этой строки.
+    image: postgres:16.11-alpine
     container_name: tacitus-postgres
     restart: unless-stopped
     env_file:
@@ -267,7 +270,7 @@ services:
       sh -c "python -m alembic -c /app/alembic.ini upgrade head"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.10-alpine
     container_name: tacitus-redis
     restart: unless-stopped
     command: redis-server --appendonly yes

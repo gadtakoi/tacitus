@@ -21,7 +21,7 @@ services:
 
 ## PostgreSQL
 
-- Образ `postgres:16-alpine`
+- Образ `postgres:16.11-alpine` (точный патч-тег, см. раздел Security)
 - Креды из `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`
 - Наружу пробрасывается `${POSTGRES_HOST_PORT:-15432}` (нестандартный порт,
   чтобы не конфликтовать с локальным PostgreSQL)
@@ -30,6 +30,7 @@ services:
 
 ## Redis
 
+- Образ `redis:7.4.10-alpine`
 - Используется как backend `TACITUS_RATE_LIMIT_STORAGE_URI` в production
 - Данные в named volume `redis-data`
 - Наружу не публикуется
@@ -103,7 +104,13 @@ Encrypt».
 
 ## Security
 
-- Версии образов зафиксированы (no `latest`)
+- Версии образов зафиксированы точными патч-тегами, а не только мажорными:
+  `postgres:16.11-alpine`, `redis:7.4.10-alpine`, `python:3.14.5-slim`,
+  `node:22.23.2-alpine`, `nginx:1.27.5-alpine`, MinIO и MediaMTX — по дате
+  релиза. Мажорный тег вроде `16-alpine` не `latest`, но всё равно движется:
+  пересборка через полгода принесла бы другой патч-релиз без единого
+  изменения в репозитории. Обновление версии — осознанная правка строки;
+  проверяется тестом `test_upstream_images_are_pinned_to_an_exact_release`
 - MinIO console недоступен извне
 - Dev credentials только для локальной разработки
 - MediaMTX не открывает порты HLS/WebRTC/RTMP/SRT наружу
