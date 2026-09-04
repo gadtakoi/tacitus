@@ -431,8 +431,21 @@ deploy:
 
 ### 8.1 Dependency Scanning
 
-- Зависимости зафиксированы с SHA-256 хешами в `requirements.txt`
-  (997 хешей, сгенерировано `pip-compile --generate-hashes`).
+- Зависимости зафиксированы с SHA-256 хешами в `requirements.txt`,
+  сгенерированном из `uv.lock` командой `uv export`.
+- **Docker-образ собирается именно по этому файлу:**
+  `pip install --require-hashes -r requirements.txt`. Несовпадение хеша или
+  пакет, отсутствующий в лок-файле, роняют сборку.
+- Приложение не устанавливается как дистрибутив — каталог `app/` копируется в
+  образ. Установка запускала бы PEP 517 source build, который тянет
+  `setuptools` из PyPI мимо хеш-пиннинга.
+
+> До 2026-09-04 это утверждение не соответствовало действительности:
+> `Dockerfile` ставил зависимости из `pyproject.toml` с диапазонами `>=`, а
+> `requirements.txt` в сборке не участвовал и успел разойтись с проектом —
+> в нём отсутствовали `sqlalchemy`, `uvicorn`, `python-jose` и `sentry-sdk`.
+> Расхождение было видно по версиям: лок-файл фиксировал `boto3 1.43.24`, в
+> образе стояла `1.43.87`.
 
 > ⚠️ Хуки `pip-audit` и `npm audit` **закомментированы** в
 > `.pre-commit-config.yaml` (вместе с локальным `pytest`) — автоматического
@@ -445,30 +458,35 @@ uv run pip-audit -r requirements.txt
 cd frontend && npm audit --audit-level=moderate
 ```
 
-Обновление lock-файла:
+Обновление lock-файла (подробнее — `docs/uv.md`):
 
 ```bash
-pip-compile --generate-hashes pyproject.toml -o requirements.txt
+uv lock
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file requirements.txt
 ```
 
-#### Результат аудита от 2026-09-03
+#### Результат аудита от 2026-09-04
 
-`pip-audit -r requirements.txt` — **14 известных уязвимостей в 5 пакетах**.
-Устранение запланировано в `plan/PLAN_stage_10_audit.md` (пункт A-21).
+`pip-audit -r requirements.txt` — **1 известная уязвимость в 1 пакете**.
 
 | Пакет | Версия | ID | Fix | Применимость к Tacitus |
 |---|---|---|---|---|
-| `starlette` | 1.2.1 | PYSEC-2026-249 | 1.3.1 | **Высокая.** `request.form()` не применяет границы `max_fields` / `max_part_size` — прямо касается `POST /files/upload` |
-| `starlette` | 1.2.1 | PYSEC-2026-248 | 1.3.0 | Средняя. `request.url` восстанавливается из невалидированного пути |
-| `cryptography` | 48.0.0 | GHSA-537c-gmf6-5ccf | 48.0.1 | Средняя. Статически слинкованный OpenSSL в wheel |
-| `cryptography` | 48.0.0 | PYSEC-2026-3552/3553/3554 | 49.0.0 / 50.0.0 | Низкая. Проверка цепочек сертификатов и PKCS#7 в приложении не используется |
-| `pyasn1` | 0.6.3 | PYSEC-2026-3455/3456/3457 | 0.6.4 | Низкая. Транзитивно через `python-jose`; ASN.1 из недоверенного ввода не разбирается |
-| `pydantic-settings` | 2.14.1 | GHSA-4xgf-cpjx-pc3j | 2.14.2 | Низкая. Затрагивает `NestedSecretsSettingsSource` с `secrets_nested_subdir=True` — не используется |
-| `ecdsa` | 0.19.2 | PYSEC-2026-1325 | **нет** | Принятый риск. Minerva timing attack на P-256; Tacitus подписывает JWT алгоритмом HS256 (HMAC), ECDSA-путь не задействован |
+| `ecdsa` | 0.19.2 | PYSEC-2026-1325 | **нет** | Принятый риск. Minerva timing attack на P-256; приходит транзитивно через `python-jose`. Tacitus подписывает JWT алгоритмом HS256 (HMAC), ECDSA-путь не задействован |
 
-> ⚠️ Аудит проверяет `requirements.txt`, но `Dockerfile` собирает образ из
-> `pyproject.toml` без хешей (см. `plan/PLAN_stage_10_audit.md`, пункт A-02),
-> поэтому версии в образе могут отличаться от проверенных.
+Предыдущий аудит (2026-09-03) находил **14 уязвимостей в 5 пакетах**. Они
+закрылись при перегенерации лок-файла из `uv.lock`, потому что старый
+`requirements.txt` фиксировал давно устаревшие версии:
+
+| Пакет | Было | Стало | Что закрыто |
+|---|---|---|---|
+| `starlette` | 1.2.1 | 1.6.0 | PYSEC-2026-248, PYSEC-2026-249 (`request.form()` не применял `max_fields`/`max_part_size` — касалось `POST /files/upload`) |
+| `cryptography` | 48.0.0 | 48.0.1+ | GHSA-537c-gmf6-5ccf и три PYSEC по цепочкам сертификатов и PKCS#7 |
+| `pyasn1` | 0.6.3 | 0.6.4 | PYSEC-2026-3455/3456/3457 |
+| `pydantic-settings` | 2.14.1 | 2.14.2+ | GHSA-4xgf-cpjx-pc3j |
+
+Аудит проверяет `requirements.txt` — тот же файл, по которому собирается
+образ, поэтому проверенные версии совпадают с установленными.
 
 ### 8.2 SBOM
 
