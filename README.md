@@ -41,7 +41,6 @@ docker compose up -d
 
 | Endpoint          | Method | Auth   | Описание             |
 |-------------------|--------|--------|----------------------|
-| `/`               | GET    | Нет    | Hello World          |
 | `/health`         | GET    | Нет    | Health check         |
 | `/auth/register`  | POST   | Нет    | Регистрация          |
 | `/auth/login`     | POST   | Нет    | Логин (JWT)          |

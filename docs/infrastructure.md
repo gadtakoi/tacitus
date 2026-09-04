@@ -45,9 +45,16 @@ services:
 - `/health` → proxy to `app:8000/health`
 - `/.env` → `deny all` + 404
 - `/.well-known/acme-challenge/` → webroot Certbot
-- `/hls/` → proxy to `mediamtx:8888` (требует `hls: yes` в `mediamtx.yml`)
-- `/webrtc/` → proxy to `mediamtx:8889` (требует `webrtc: yes` в `mediamtx.yml`)
 - `/` → static React SPA (`/usr/share/nginx/html`)
+
+> Локаций `/hls/` и `/webrtc/` **нет**. Они существовали, но проксировали в
+> протоколы, выключенные в `mediamtx.yml` (`hls: no`, `webrtc: no`) в обеих
+> конфигурациях — dev и production, — то есть были заведомо нерабочими. При
+> этом каждая несла `Access-Control-Allow-Origin *` и собственную копию всех
+> security-заголовков (nginx не наследует `add_header` в блок, который
+> объявляет свои). Удалены: комплект заголовков теперь в одном месте, а
+> production-шаблон Ansible этих локаций и не содержал — дрейф между двумя
+> конфигами устранён. Включите HLS/WebRTC в MediaMTX — верните и локации.
 
 > Отдельных location для `/files/` и `/streams/` **нет**: фронтенд ходит к ним
 > через `/api/`. Прямой запрос на `http://host/files/...` уйдёт в SPA-fallback.

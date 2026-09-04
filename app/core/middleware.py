@@ -64,8 +64,14 @@ class MaxRequestSizeMiddleware(BaseHTTPMiddleware):
                 )
             else:
                 if size > self.max_size:
+                    # ``RequestIdMiddleware`` runs outside this one, so the
+                    # correlation id is already on the request — include it
+                    # like every other error response does.
                     return JSONResponse(
                         status_code=413,
-                        content={"error": "Request entity too large"},
+                        content={
+                            "error": "Request entity too large",
+                            "request_id": getattr(request.state, "request_id", "unknown"),
+                        },
                     )
         return await call_next(request)

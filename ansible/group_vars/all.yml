@@ -72,4 +72,3 @@ mediamtx_paths:
 
 # Pre/post check settings
 app_health_url: "http://localhost:{{ nginx_host_port }}/health"
-app_hello_url: "http://localhost:{{ nginx_host_port }}/api/"

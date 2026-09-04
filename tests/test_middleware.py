@@ -47,7 +47,10 @@ async def test_oversized_content_length_rejected() -> None:
             headers={"Content-Length": "20"},
         )
         assert response.status_code == 413
-        assert response.json() == {"error": "Request entity too large"}
+        body = response.json()
+        assert body["error"] == "Request entity too large"
+        # No RequestIdMiddleware in this minimal app, so the id falls back.
+        assert body["request_id"] == "unknown"
 
 
 @pytest.mark.anyio
@@ -81,3 +84,55 @@ async def test_request_without_body_passes_through() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
         assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_size_rejection_on_the_real_app_carries_a_correlation_id() -> None:
+    """The 413 from the real application is traceable.
+
+    ``RequestIdMiddleware`` used to be registered first, which made it the
+    innermost wrapper. ``MaxRequestSizeMiddleware`` answers without calling
+    downstream, so its rejection never passed through the id middleware and
+    went out with neither the ``x-request-id`` header nor a ``request_id`` in
+    the body — leaving the client with a failure they could not quote in a
+    bug report.
+
+    No database is involved: the middleware short-circuits before any handler.
+    """
+    from app.main import app as real_app
+
+    transport = ASGITransport(app=real_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/files/upload",
+            content=b"x" * 16,
+            headers={"Content-Length": str(12 * 1024 * 1024)},
+        )
+
+    assert response.status_code == 413
+    assert "x-request-id" in response.headers
+    assert response.json()["request_id"] == response.headers["x-request-id"]
+
+
+@pytest.mark.anyio
+async def test_middleware_order_keeps_cors_outermost() -> None:
+    """CORS wraps everything, so even rejected requests answer with its headers.
+
+    Registration order is reverse-nesting, which makes it easy to break by
+    moving a line; this pins the two ends of the chain.
+    """
+    from app.main import app as real_app
+
+    transport = ASGITransport(app=real_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/files/upload",
+            content=b"x" * 16,
+            headers={
+                "Content-Length": str(12 * 1024 * 1024),
+                "Origin": "http://localhost:3000",
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

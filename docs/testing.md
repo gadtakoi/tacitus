@@ -74,7 +74,6 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 
 | Файл                                 | Что тестируется                                    | Нужна БД |
 |--------------------------------------|----------------------------------------------------|----------|
-| `test_hello.py`                      | Hello World endpoint                               | нет      |
 | `test_health.py`                     | Health check                                       | нет      |
 | `test_auth.py`                       | Регистрация, логин, refresh, logout, 401           | да       |
 | `test_auth_schemas.py`               | Валидация username и пароля на уровне схем         | нет      |

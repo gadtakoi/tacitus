@@ -1,5 +1,5 @@
 ---
-- name: Deploy Tacitus Hello World
+- name: Deploy Tacitus
   hosts: tacitus
   gather_facts: true
 
@@ -55,22 +55,22 @@
   post_tasks:
     - name: Post-check | Verify HTTP application responds
       ansible.builtin.uri:
-        url: "{{ app_hello_url }}"
+        url: "{{ app_health_url }}"
         method: GET
         status_code: 200
         return_content: true
-      register: hello_response
+      register: health_response
       retries: 5
       delay: 3
-      until: hello_response.status == 200
+      until: health_response.status == 200
       when: not tacitus_enable_https | bool
 
-    - name: Post-check | Assert response contains Hello World (HTTP)
+    - name: Post-check | Assert health endpoint reports ok (HTTP)
       ansible.builtin.assert:
         that:
-          - "'Hello World' in hello_response.content"
-        fail_msg: "Application did not return expected Hello World message"
-        success_msg: "Application is running and returning Hello World"
+          - health_response.json.status == 'ok'
+        fail_msg: "Application health endpoint did not report ok"
+        success_msg: "Application is running and healthy"
       when: not tacitus_enable_https | bool
 
     - name: Post-check | Verify HTTPS redirect (HTTP → HTTPS)
@@ -81,9 +81,13 @@
         follow_redirects: none
       when: tacitus_enable_https | bool
 
+    # Проверяется /health, а не /. Прежняя версия запрашивала корень и искала
+    # в ответе «Hello World», но по «/» nginx отдаёт React SPA — этой строки
+    # там нет и быть не может, так что проверка провалила бы любой
+    # HTTPS-деплой.
     - name: Post-check | Verify HTTPS application responds
       ansible.builtin.uri:
-        url: "https://{{ tacitus_domain }}/"
+        url: "https://{{ tacitus_domain }}/health"
         method: GET
         status_code: 200
         return_content: true
@@ -94,12 +98,12 @@
       until: https_response.status == 200
       when: tacitus_enable_https | bool
 
-    - name: Post-check | Assert response contains Hello World (HTTPS)
+    - name: Post-check | Assert health endpoint reports ok (HTTPS)
       ansible.builtin.assert:
         that:
-          - "'Hello World' in https_response.content"
-        fail_msg: "Application did not return expected Hello World message over HTTPS"
-        success_msg: "Application is running over HTTPS and returning Hello World"
+          - https_response.json.status == 'ok'
+        fail_msg: "Application health endpoint did not report ok over HTTPS"
+        success_msg: "Application is running and healthy over HTTPS"
       when: tacitus_enable_https | bool
 
     - name: Post-check | Verify all containers are healthy
@@ -111,4 +115,7 @@
 
     - name: Post-check | Display deployment status
       ansible.builtin.debug:
-        msg: "Tacitus deployed successfully. Response: {{ hello_response.content }}"
+        msg: >-
+          Tacitus deployed successfully over
+          {{ 'HTTPS' if tacitus_enable_https | bool else 'HTTP' }};
+          health endpoint reported ok.

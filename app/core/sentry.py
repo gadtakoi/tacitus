@@ -6,6 +6,7 @@ from typing import Any
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
+from app import __version__
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def init_sentry() -> None:
         dsn=settings.sentry_dsn,
         environment=settings.sentry_environment,
         traces_sample_rate=settings.sentry_traces_sample_rate,
-        release="tacitus@0.1.0",
+        release=f"tacitus@{__version__}",
         integrations=[FastApiIntegration()],
         before_send=_strip_sensitive_data,  # type: ignore[arg-type]
     )

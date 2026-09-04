@@ -119,22 +119,15 @@
     url: "{{ app_health_url }}"
     method: GET
     status_code: 200
+    return_content: true
   register: health_check
   retries: 10
   delay: 3
   until: health_check.status == 200
 
-- name: Post-check | Verify Hello World endpoint
-  ansible.builtin.uri:
-    url: "{{ app_hello_url }}"
-    method: GET
-    status_code: 200
-    return_content: true
-  register: hello_check
-
-- name: Post-check | Assert Hello World response
+- name: Post-check | Assert health endpoint reports ok
   ansible.builtin.assert:
     that:
-      - "'Hello World' in hello_check.content"
-    fail_msg: "Application is not returning expected Hello World"
+      - health_check.json.status == 'ok'
+    fail_msg: "Application health endpoint did not report ok"
     success_msg: "Application verified successfully"

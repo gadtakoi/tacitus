@@ -21,7 +21,6 @@ app/
 │   └── routers/
 │       ├── auth.py          # /auth/* endpoints
 │       ├── files.py         # /files/* endpoints
-│       ├── hello.py         # / endpoint
 │       └── streams.py       # /streams/* endpoints (MediaMTX monitoring)
 ├── core/
 │   ├── config.py            # Pydantic-settings (env vars)
@@ -42,12 +41,10 @@ app/
 ├── schemas/
 │   ├── auth.py              # RegisterRequest, LoginRequest, TokenResponse
 │   ├── files.py             # FileUploadResponse, FileListResponse, ...
-│   ├── hello.py             # HelloWorldResponse
 │   ├── stats.py             # FileStat, S3StatsResponse
 │   └── streams.py           # StreamItem, StreamsListResponse, StreamConfig
 └── services/
     ├── auth_service.py      # Регистрация, логин, JWT lifecycle
-    ├── hello_service.py     # Hello World business logic
     ├── s3_service.py        # CRUD операции с MinIO
     └── stream_config_service.py  # Задел под CRUD потоков (не подключён)
 ```

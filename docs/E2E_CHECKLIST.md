@@ -22,12 +22,11 @@ docker compose up -d
 - [ ] `docker compose ps` показывает 9 сервисов:
     - `Up`: `tacitus-app`, `tacitus-nginx`, `postgres`, `redis`, `minio`, `mediamtx`, `mediamtx-cleanup`
     - `Exit 0`: `minio-init`, `db-migrations`
-- [ ] `docker compose logs db-migrations` содержит применение миграций до `a1c7e4d2b905`.
+- [ ] `docker compose logs db-migrations` содержит применение миграций до `b2d8f6a3c714`.
 
 ## 2. Health checks
 
 - [ ] `curl -s http://localhost/health` → `{"status":"ok"}`
-- [ ] `curl -s http://localhost/api/` → `{"message":"Hello World"}`
 - [ ] `docker compose exec postgres pg_isready -U tacitus` → `accepting connections`
 - [ ] `docker compose exec minio curl -sf http://localhost:9000/minio/health/live` → `200`
 

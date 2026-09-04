@@ -74,3 +74,36 @@ def test_strip_sensitive_data_tolerates_missing_sections() -> None:
     """An event without request/extra sections passes through unchanged."""
     assert _strip_sensitive_data({}, None) == {}
     assert _strip_sensitive_data({"request": None, "extra": "not-a-dict"}, None) is not None
+
+
+def test_version_matches_pyproject() -> None:
+    """The runtime version and the packaging version stay in step.
+
+    ``app.__version__`` is what Sentry reports as the release; the image does
+    not install the project as a distribution, so package metadata is not
+    available there. Two literals therefore exist, and this keeps them from
+    drifting apart unnoticed.
+    """
+    import tomllib
+    from pathlib import Path
+
+    from app import __version__
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    assert __version__ == pyproject["project"]["version"]
+
+
+def test_sentry_release_carries_the_application_version() -> None:
+    """The release string is derived, not hardcoded."""
+    from app import __version__
+
+    with (
+        patch("app.core.sentry.sentry_sdk") as mock_sdk,
+        patch("app.core.sentry.settings") as mock_settings,
+    ):
+        mock_settings.sentry_dsn = "https://key@o123.ingest.sentry.io/456"
+        mock_settings.sentry_environment = "test"
+        mock_settings.sentry_traces_sample_rate = 0.5
+        init_sentry()
+
+    assert mock_sdk.init.call_args.kwargs["release"] == f"tacitus@{__version__}"
