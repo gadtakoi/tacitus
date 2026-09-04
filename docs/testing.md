@@ -98,10 +98,11 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_startup_validation.py`         | Production-гарды `validate_startup_settings`       | нет      |
 | `test_mediamtx_security.py`          | `authInternalUsers`, разделение прав, bind RTSP    | нет      |
 | `test_streams_auth.py`               | Basic-аутентификация в MediaMTX Control API        | да       |
+| `test_compose_pinning.py`            | Отсутствие установок пакетов при старте контейнеров | нет      |
 
 ## Покрытие
 
-Текущее покрытие: **89%** (1363 statements, 156 missed) — 186 тестов, все
+Текущее покрытие: **89%** (1363 statements, 156 missed) — 189 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому

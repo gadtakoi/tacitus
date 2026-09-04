@@ -174,7 +174,16 @@ services:
           memory: 128M
 
   mediamtx-cleanup:
-    image: python:3.14-slim
+    # Runs on the application image, which already carries boto3 from the
+    # build. Previously this was a bare python:3.14-slim that ran
+    # `pip install boto3` on every start: the archive manager deletes local
+    # recordings after uploading them, and it could not start at all without
+    # reaching PyPI. Sharing the image means one place pins the SDK and the
+    # cleanup job talks to S3 through exactly the same boto3 as the app.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tacitus-app:0.1.0
     container_name: tacitus-mediamtx-cleanup
     restart: unless-stopped
     env_file:
@@ -193,12 +202,16 @@ services:
       - ./scripts/mediamtx-archive-manager.py:/app/script.py:ro
     networks:
       - tacitus-network
+    # The application image declares a HEALTHCHECK that probes the HTTP API on
+    # port 8000. This container runs the archive loop instead of uvicorn, so
+    # that probe can only ever fail and would park the service in `unhealthy`.
+    healthcheck:
+      disable: true
     command: >
-      bash -c "pip install --no-cache-dir boto3 &&
-               while true; do
-                 python /app/script.py;
-                 sleep 3600;
-               done"
+      sh -c "while true; do
+               python /app/script.py;
+               sleep 3600;
+             done"
     deploy:
       resources:
         limits:
