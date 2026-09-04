@@ -98,32 +98,44 @@ async def _call(client: AsyncClient, stub, path: str = "/streams") -> httpx.Resp
 
 @pytest.mark.anyio
 async def test_list_streams_returns_the_documented_contract(client: AsyncClient) -> None:
-    """A healthy upstream response reaches the client with every field intact.
+    """MediaMTX's camelCase is parsed in and snake_case is served out.
 
-    Note the casing: these endpoints answer in **camelCase**, unlike the rest
-    of the API. The schema carries MediaMTX's names as aliases so it can parse
-    upstream JSON, and FastAPI serialises by alias (``response_model_by_alias``
-    defaults to True), so the aliases leak into our own responses. The test
-    pins the shape that is actually served rather than the one the field names
-    suggest — changing it would break any existing client.
+    The schema's aliases exist to read MediaMTX's field names; they are not
+    part of our contract. Both halves are asserted here: the upstream payload
+    is camelCase, the response is snake_case like the rest of the API.
     """
     result = await _call(client, _upstream(response=httpx.Response(200, json=_PATHS_LIST_PAYLOAD)))
 
     assert result.status_code == 200
     body = result.json()
-    assert body["pageCount"] == 1
-    assert body["itemCount"] == 1
+    assert body["page_count"] == 1
+    assert body["item_count"] == 1
 
     item = body["items"][0]
     assert item["name"] == "cam1"
-    assert item["confName"] == "cam1"
+    assert item["conf_name"] == "cam1"
     assert item["ready"] is True
-    assert item["readyTime"] == "2026-09-05T10:00:00Z"
+    assert item["ready_time"] == "2026-09-05T10:00:00Z"
     assert item["tracks"] == ["H264"]
-    assert item["bytesReceived"] == 1024
-    assert item["bytesSent"] == 2048
+    assert item["bytes_received"] == 1024
+    assert item["bytes_sent"] == 2048
     assert item["source"] == {"type": "rtspSession", "id": "abc"}
     assert item["readers"] == [{"type": "rtspSession", "id": "def"}]
+
+
+@pytest.mark.anyio
+async def test_responses_carry_no_camelcase_aliases(client: AsyncClient) -> None:
+    """No alias survives into the response body.
+
+    ``response_model_by_alias`` defaults to True in FastAPI, so leaving it
+    unset republishes MediaMTX's field names as our own. This guards the
+    setting from being dropped in a later edit.
+    """
+    result = await _call(client, _upstream(response=httpx.Response(200, json=_PATHS_LIST_PAYLOAD)))
+
+    raw = result.text
+    for alias in ("pageCount", "itemCount", "confName", "readyTime", "bytesReceived", "bytesSent"):
+        assert alias not in raw, f"response still exposes the MediaMTX alias {alias}"
 
 
 @pytest.mark.anyio

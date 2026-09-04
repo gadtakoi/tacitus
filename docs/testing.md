@@ -105,7 +105,7 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 
 ## Покрытие
 
-Текущее покрытие: **90%** (1383 statements, 140 missed) — 214 тестов, все
+Текущее покрытие: **90%** (1383 statements, 140 missed) — 215 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому

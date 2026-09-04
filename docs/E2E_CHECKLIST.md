@@ -263,9 +263,12 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost/api/files/R
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost/api/streams | jq
 ```
 
-- [ ] HTTP `200 OK`, поля `pageCount`, `itemCount`, `items`
+- [ ] HTTP `200 OK`, поля `page_count`, `item_count`, `items`
+- [ ] В `items[]` поля `conf_name`, `ready_time`, `bytes_received`, `bytes_sent`
+      (snake_case; camelCase-имена MediaMTX наружу не отдаются)
 - [ ] При остановленном MediaMTX (`docker compose stop mediamtx`) → `503`
 - [ ] Запрос несуществующего пути `/api/streams/nope` → `404`
+- [ ] Более 60 запросов в минуту → `429`
 
 ## 7. React frontend (браузер)
 

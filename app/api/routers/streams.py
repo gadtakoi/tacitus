@@ -136,7 +136,12 @@ async def _fetch_from_mediamtx[ModelT: BaseModel](path: str, model: type[ModelT]
         ) from exc
 
 
-@router.get("", response_model=StreamsListResponse)
+# ``response_model_by_alias=False`` on both routes: the schema aliases exist to
+# parse MediaMTX's camelCase input, but FastAPI serialises by alias by default,
+# which leaked those names into our own responses. The rest of the API is
+# snake_case, and a caller of Tacitus should not have to know that one endpoint
+# happens to proxy a third party.
+@router.get("", response_model=StreamsListResponse, response_model_by_alias=False)
 @limiter.limit("60/minute", key_func=get_user_or_ip)
 async def list_streams(
     request: Request,
@@ -160,7 +165,7 @@ async def list_streams(
     return await _fetch_from_mediamtx("/paths/list", StreamsListResponse)
 
 
-@router.get("/{path:path}", response_model=StreamItem)
+@router.get("/{path:path}", response_model=StreamItem, response_model_by_alias=False)
 @limiter.limit("60/minute", key_func=get_user_or_ip)
 async def get_stream(
     request: Request,
