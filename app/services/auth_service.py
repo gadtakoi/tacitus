@@ -556,7 +556,7 @@ async def logout_user(
     username = username_from_access_token(access_token)
 
     await revoke_access_token(session, access_token)
-    refresh_revoked = await clear_refresh_token(session, refresh_token)
+    refresh_revoked = await _revoke_own_refresh_token(session, refresh_token, username)
 
     try:
         await session.commit()
@@ -568,22 +568,49 @@ async def logout_user(
     return username, refresh_revoked
 
 
-async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
-    """Stage revocation of a refresh token (logout).
+async def _revoke_own_refresh_token(
+    session: AsyncSession,
+    token: str,
+    username: str | None,
+) -> bool:
+    """Stage revocation of a refresh token that belongs to the caller.
+
+    Revocation used to happen by token hash alone, so a session presenting
+    somebody else's refresh token would retire it — logging that user out.
+
+    When ``username`` is ``None`` the access token could not be decoded and
+    ownership cannot be established. The token is still revoked in that case:
+    presenting the refresh token is itself proof of possession, and refusing
+    would break logout for a client whose access token has expired. The check
+    is therefore a guard against cross-account revocation by an otherwise
+    legitimate session, plus a detection signal — not a hard boundary.
 
     Does not commit — see :func:`logout_user`.
 
     Args:
         session: Database session.
         token: Raw refresh token string.
+        username: Owner claimed by the access token, or ``None`` when it could
+            not be decoded.
 
     Returns:
         True if this call revoked an active token, False if the token was
-        unknown or had already been revoked.
+        unknown, already revoked, or owned by a different account.
     """
     token_hash = _hash_token(token)
     repo = RefreshTokenRepository(session)
     try:
+        stored = await repo.get_by_token_hash(token_hash)
+        if stored is None:
+            return False
+        if username is not None and stored.user.username != username:
+            log_security_event(
+                "auth.logout.foreign_refresh_token",
+                severity="warning",
+                user=username,
+                extra={"token_owner": stored.user.username},
+            )
+            return False
         return await repo.revoke(token_hash)
     except (IntegrityError, DBAPIError) as exc:
         await session.rollback()

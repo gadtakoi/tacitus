@@ -105,10 +105,11 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_request_id.py`                 | Валидация `X-Request-Id`, log/header injection     | да       |
 | `test_login_timing.py`               | Одна проверка пароля на любой исход логина         | да       |
 | `test_password_bounds.py`            | Границы длины пароля, отсутствие эха в 422         | да       |
+| `test_logout_authz.py`               | Владелец refresh-токена при выходе, лимиты         | да       |
 
 ## Покрытие
 
-Текущее покрытие: **90%** (1396 statements, 138 missed) — 250 тестов, все
+Текущее покрытие: **91%** (1404 statements, 131 missed) — 255 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому

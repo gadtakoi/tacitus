@@ -40,6 +40,8 @@ Nginx добавляет следующие security headers ко всем от�
 | `POST /auth/login`       | 5/мин  | IP           |
 | `POST /auth/register`    | 3/час  | IP           |
 | `POST /auth/refresh`     | 10/мин | IP           |
+| `POST /auth/logout`      | 10/мин | пользователь |
+| `GET /auth/me`           | 60/мин | пользователь |
 | `POST /files/upload`     | 10/мин | пользователь |
 | `GET /files/`            | 60/мин | пользователь |
 | `GET /files/stats`       | 10/мин | пользователь |
@@ -48,9 +50,10 @@ Nginx добавляет следующие security headers ко всем от�
 | `GET /streams`           | 60/мин | пользователь |
 | `GET /streams/{path}`    | 60/мин | пользователь |
 
-Ключ везде вычисляет одна и та же функция `get_user_or_ip`. Для `/auth/*` она
-на практике даёт IP просто потому, что в этих запросах обычно нет заголовка
-`Authorization`. `POST /auth/logout` и `GET /auth/me` лимитов не имеют.
+Ключ везде вычисляет одна и та же функция `get_user_or_ip`. Для
+`register`/`login`/`refresh` она на практике даёт IP просто потому, что в этих
+запросах обычно нет заголовка `Authorization`; для `logout` и `me` — имя
+пользователя из JWT.
 
 Клиентский IP берётся с учётом `TACITUS_TRUSTED_PROXY_HOPS` — см. §2.7, иначе
 лимит обходится подделкой `X-Forwarded-For`.
@@ -145,7 +148,20 @@ Nginx добавляет следующие security headers ко всем от�
   новый (rotation).
 - `POST /auth/logout` — отзывает оба токена: `jti` access-токена попадает в
   `revoked_tokens` через PostgreSQL upsert (`ON CONFLICT DO NOTHING`, для
-  идемпотентности), refresh-токен помечается `revoked_at`.
+  идемпотентности), refresh-токен помечается `revoked_at`. Оба отзыва
+  выполняются одной транзакцией в `logout_user`.
+- **Проверка владельца при logout.** Refresh-токен отзывается, только если он
+  принадлежит владельцу предъявленного access-токена. Раньше отзыв шёл по
+  хешу токена, поэтому сессия, предъявившая чужой refresh-токен, выкидывала
+  того пользователя из системы. Несовпадение пишется событием
+  `auth.logout.foreign_refresh_token`.
+
+  > Если access-токен раскодировать не удалось, владелец неизвестен и токен
+  > отзывается по факту предъявления. Отказ здесь сломал бы выход для клиента
+  > с истёкшим access-токеном, а владение refresh-токеном само по себе
+  > является доказательством. То есть проверка — защита от перекрёстного
+  > отзыва легитимной сессией и сигнал для расследования, а не жёсткая
+  > граница.
 - `decode_access_token()` проверяет `revoked_tokens` в БД перед валидацией.
 
 **Reuse detection.** Отзыв refresh-токена выполняется одним
@@ -405,6 +421,7 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 | `auth.refresh.success`        | info     | ip, user                  |
 | `auth.refresh.reuse_detected` | warning  | user                      |
 | `auth.token.revoked`          | info     | ip, user, refresh_revoked |
+| `auth.logout.foreign_refresh_token` | warning | user, token_owner |
 | `file.upload`                 | info     | ip, user, file_name, size |
 | `file.download`               | info     | ip, user, file_name       |
 | `file.delete`                 | info     | ip, user, file_name       |

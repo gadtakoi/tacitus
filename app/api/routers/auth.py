@@ -162,6 +162,7 @@ async def auth_refresh(
 
 
 @router.post("/logout")
+@limiter.limit("10/minute")
 async def auth_logout(
     request: Request,
     body: LogoutRequest,
@@ -221,6 +222,7 @@ async def auth_logout(
 
 
 @router.get("/me")
+@limiter.limit("60/minute")
 async def auth_me(
     request: Request,
     current_user: str = Depends(get_current_user),
