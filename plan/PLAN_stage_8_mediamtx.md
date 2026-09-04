@@ -59,35 +59,44 @@
 
 #### 3.1.1. Модель данных и хранение конфигурации
 
+> **Статус: выполнен.** Фактически реализован в рамках
+> `PLAN_stage_9_pg.md` (переход на PostgreSQL), поэтому отметки здесь долго
+> оставались непроставленными. Сверено с кодом 2026-09-05, отклонения от
+> исходной формулировки отмечены ниже.
+
 - [x] Создать Pydantic-схемы:
-  - `StreamConfig` (name, source, record_enabled, publish_creds, read_creds,
-    created_at, updated_at)
+  - `StreamConfig` (name, source, record_enabled, created_at, updated_at)
   - `StreamCreateRequest`, `StreamUpdateRequest`
-- [ ] Настроить **PostgreSQL** в `docker-compose.yml`:
-  - Сервис `postgres:18-alpine` с volume `postgres-data`
+  - *Отклонение:* `publish_creds` / `read_creds` удалены (ADR-013) — см.
+    §3.1.3.
+- [x] Настроить **PostgreSQL** в `docker-compose.yml`:
+  - Сервис с volume `postgres-data`
   - Переменные окружения: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
   - Healthcheck через `pg_isready`
   - Сервис подключён к сети `tacitus-network`
-- [ ] Добавить **SQLAlchemy** + **asyncpg** в зависимости:
+  - *Отклонение:* используется `postgres:16-alpine`, а не `18-alpine`.
+- [x] Добавить **SQLAlchemy** + **asyncpg** в зависимости:
   - `sqlalchemy[asyncio]>=2.0`, `asyncpg>=0.29`
   - Обновить `pyproject.toml` и `requirements.txt`
-- [ ] Создать модели SQLAlchemy (`app/db/models.py`):
-  - `Stream` (id, name, source, record_enabled, publish_user, publish_pass,
-    read_user, read_pass, created_at, updated_at)
-  - Уникальный индекс на `name`
-- [ ] Настроить миграции **Alembic**:
+- [x] Создать модели SQLAlchemy (`app/db/models.py`):
+  - `Stream` (id, name, source, record_enabled, created_at, updated_at)
+  - Уникальный индекс на `name` (`uq_stream_name`)
+  - *Отклонение:* колонки `publish_user`/`publish_pass`/`read_user`/
+    `read_pass` удалены миграцией `b2d8f6a3c714` (ADR-013).
+- [x] Настроить миграции **Alembic**:
   - `alembic init migrations`
   - Подключение к БД через `TACITUS_DATABASE_URL`
-  - Автогенерация миграций для модели `Stream`
-- [ ] Создать слой доступа к данным (`app/db/repositories/streams.py`):
-  - `create_stream()`, `get_stream_by_name()`, `list_streams()`,
-    `update_stream()`, `delete_stream()`
+  - Миграция `64327e575f70_create_streams_table.py`
+- [x] Создать слой доступа к данным (`app/db/repositories/streams.py`):
+  - Методы `create()`, `get_by_name()`, `list_all()`, `update()`, `delete()`
   - Async SQLAlchemy session через `async_sessionmaker`
-- [ ] Рефакторинг `app/services/stream_config_service.py`:
+  - *Отклонение:* имена методов без суффикса `_stream` — класс
+    `StreamRepository` уже задаёт контекст.
+- [x] Рефакторинг `app/services/stream_config_service.py`:
   - Заменить in-memory dict на вызовы к репозиторию БД
-  - Удалить `_streams: dict` и `_streams_lock`
-- [ ] Добавить валидацию: уникальность имени потока (на уровне БД + схемы),
-  допустимые символы в path
+  - Удалить `_streams: dict` и `_streams_lock` — в коде их нет
+- [x] Добавить валидацию: уникальность имени потока (на уровне БД + схемы),
+  допустимые символы в path (`validate_name`)
 
 #### 3.1.2. Backend API — CRUD потоков
 
@@ -109,15 +118,46 @@
 
 #### 3.1.3. Индивидуальные настройки per-path
 
-- [ ] Поддержка параметров в `mediamtx.yml` (и Jinja2-шаблоне):
-  - `record: yes/no` — запись для конкретного потока
-  - `source: publisher | rtsp://camera-url` — источник
-  - `publishUser`, `publishPass` — аутентификация публикации
-  - `readUser`, `readPass` — аутентификация чтения
-  - `publishIPs`, `readIPs` — IP- whitelist
-- [ ] Генерация credentials: случайные пароли через `secrets.token_urlsafe()`
-  или хеширование `sha256` с `openssl`
-- [ ] Обновление `pathDefaults` для дефолтных настроек (record, segmentDuration)
+> **Переписан 2026-09-05.** Исходная формулировка требовала per-path
+> параметров `publishUser` / `publishPass` / `readUser` / `readPass` /
+> `publishIPs` / `readIPs`. **В MediaMTX 1.15.1 их не существует.** Проверено
+> по `GET /v3/config/pathdefaults/get` на запущенном контейнере: из 82
+> параметров пути к аутентификации не относится ни один, кроме
+> `srtReadPassphrase` и `srtPublishPassphrase` (SRT в проекте отключён).
+> Разграничение доступа вынесено в глобальный список `authInternalUsers`, где
+> путь задаётся через `permissions[].path` — см. ADR-012 и ADR-013.
+
+**Что действительно настраивается per-path** (подтверждено по API):
+
+| Группа | Параметры |
+|--------|-----------|
+| Запись | `record`, `recordPath`, `recordFormat`, `recordPartDuration`, `recordSegmentDuration`, `recordMaxPartSize`, `recordDeleteAfter` |
+| Источник | `source`, `sourceOnDemand`, `sourceOnDemandStartTimeout`, `sourceOnDemandCloseAfter`, `sourceRedirect`, `sourceFingerprint` |
+| Ограничения | `maxReaders`, `fallback` |
+| Хуки | `runOnInit`, `runOnDemand`, `runOnReady`, `runOnRead`, `runOnRecordSegmentComplete` и прочие `runOn*` |
+
+**Задачи:**
+
+- [ ] Поддержка per-path параметров записи и источника в `mediamtx.yml` и в
+  Jinja2-шаблоне: `record`, `source`, `recordSegmentDuration`,
+  `sourceOnDemand`.
+- [ ] Расширить модель `Stream` полями, которые реально применимы
+  (`record_enabled` уже есть; при необходимости — `source_on_demand`,
+  `record_segment_duration`).
+- [ ] Разграничение доступа по путям — **не** через per-path credentials, а
+  через записи `authInternalUsers` с `permissions[{action, path}]`:
+  - [ ] Определить, генерируются ли учётные записи на поток или остаётся
+    общая пара publisher/reader (сейчас — общая, ADR-012).
+  - [ ] Если на поток: решить, как доставлять их в MediaMTX без перезапуска.
+    Файл `mediamtx.yml` перечитывается только при старте, а env-переменные
+    `MTX_AUTHINTERNALUSERS_<n>_*` **дописывают** записи, а не заменяют их
+    (проверено на 1.15.1). Реальные варианты: рендер файла Ansible с
+    перезапуском контейнера либо переход на `authMethod: http` с
+    делегированием проверки в Tacitus (отложено в ADR-012).
+  - [ ] Генерация паролей через `secrets.token_urlsafe()`; не хранить их в
+    открытом виде — причина удаления прежних колонок (ADR-013).
+- [ ] Обновление `pathDefaults` для дефолтных настроек (record,
+  recordSegmentDuration) — частично уже сделано в `mediamtx/mediamtx.yml`.
 
 #### 3.1.4. Frontend — UI управления потоками
 
