@@ -150,6 +150,12 @@ class SuspiciousActivityMiddleware(BaseHTTPMiddleware):
                             "Cleaned up stale security events",
                             extra={"count": cleaned},
                         )
+
+                # Repositories stage work and leave the transaction to the
+                # caller, so this session has to commit its own: the audit
+                # trail is deliberately independent of the request's
+                # transaction and must survive a failed request.
+                await session.commit()
         except Exception:
             # Observability must never take down request handling: log the
             # failure and return the original response to the client.

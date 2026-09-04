@@ -236,11 +236,14 @@ _revoke_counter = 0
 
 
 async def revoke_access_token(session: AsyncSession, token: str) -> None:
-    """Revoke an access token before its expiration.
+    """Stage revocation of an access token before its expiration.
 
     Periodically also removes blacklist entries whose tokens have already
     expired naturally — they can no longer be replayed, so keeping them only
     grows the table.
+
+    Does not commit: :func:`logout_user` ends the transaction so that the
+    access and refresh tokens are retired together.
 
     Args:
         session: Database session.
@@ -342,11 +345,17 @@ async def store_refresh_token(session: AsyncSession, token: str, username: str) 
         # user's: an expired token can no longer be exchanged, so keeping the
         # row only grows the table.
         await refresh_repo.cleanup_expired()
+        # Transaction boundary. When called from ``rotate_refresh_token`` this
+        # commit also covers the revocation of the previous token staged
+        # earlier on the same session, which is what makes rotation atomic:
+        # either the old token is retired and the new one stored, or neither.
+        await session.commit()
     except AuthRepositoryError as exc:
         # Every token carries a unique jti, so a hash collision means the token
         # is not what we think it is. Continuing would hand the client a token
         # that is not persisted — and therefore unusable for refresh — so this
         # must fail loudly instead of being logged and ignored.
+        await session.rollback()
         logger.error("Refresh token hash collision", extra={"error": str(exc)})
         raise AppError("Failed to store refresh token", status_code=500) from exc
     except (IntegrityError, DBAPIError) as exc:
@@ -443,6 +452,11 @@ async def rotate_refresh_token(
     # ``revoked_at IS NULL``, so of several requests racing with the same token
     # exactly one gets ``True`` — and only that one is allowed to mint a new
     # pair. Issuing the new token first would hand every racer a valid session.
+    #
+    # The revocation is staged, not committed: ``store_refresh_token`` below
+    # ends the transaction and both changes land together. A concurrent racer
+    # blocks on the row lock until then and re-evaluates ``revoked_at IS NULL``
+    # against the committed value, so exactly one winner still holds.
     token_hash = _hash_token(old_token)
     repo = RefreshTokenRepository(session)
     try:
@@ -473,6 +487,11 @@ async def rotate_refresh_token(
 async def _revoke_all_user_tokens(session: AsyncSession, username: str) -> None:
     """Revoke every active refresh token belonging to the user.
 
+    Commits before returning. Every caller raises ``AuthError`` immediately
+    afterwards, so the request ends as a 401 — and a transaction left for the
+    caller to finish would be discarded, silently undoing the response to a
+    suspected token theft.
+
     Args:
         session: Database session.
         username: Owner of the tokens.
@@ -487,6 +506,7 @@ async def _revoke_all_user_tokens(session: AsyncSession, username: str) -> None:
             return
         refresh_repo = RefreshTokenRepository(session)
         revoked = await refresh_repo.revoke_all_for_user(user.id)
+        await session.commit()
         logger.warning(
             "Revoked all refresh tokens for user",
             extra={"user": username, "count": revoked},
@@ -497,8 +517,55 @@ async def _revoke_all_user_tokens(session: AsyncSession, username: str) -> None:
         raise AppError("Failed to revoke tokens", status_code=500) from exc
 
 
+async def logout_user(
+    session: AsyncSession,
+    access_token: str,
+    refresh_token: str,
+) -> tuple[str | None, bool]:
+    """Retire both tokens of a session in a single transaction.
+
+    Revoking them separately left a window where the access token was
+    blacklisted but the refresh token was not: a client holding the refresh
+    token could mint a fresh access token and carry on, so the logout only
+    appeared to work.
+
+    The username is read from the access token *before* revocation, because
+    :func:`decode_access_token` consults the blacklist and would reject the
+    very token being retired.
+
+    Args:
+        session: Database session.
+        access_token: Access token presented in the Authorization header.
+        refresh_token: Refresh token to retire alongside it.
+
+    Returns:
+        Tuple of ``(username, refresh_revoked)``. ``username`` is ``None`` when
+        the access token cannot be decoded; ``refresh_revoked`` is False when
+        the refresh token was unknown or already revoked.
+
+    Raises:
+        AuthError: If the access token carries no ``jti`` claim.
+        AppError: On unexpected database errors.
+    """
+    username = username_from_access_token(access_token)
+
+    await revoke_access_token(session, access_token)
+    refresh_revoked = await clear_refresh_token(session, refresh_token)
+
+    try:
+        await session.commit()
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while logging out")
+        raise AppError("Failed to log out", status_code=500) from exc
+
+    return username, refresh_revoked
+
+
 async def clear_refresh_token(session: AsyncSession, token: str) -> bool:
-    """Revoke a refresh token (logout).
+    """Stage revocation of a refresh token (logout).
+
+    Does not commit — see :func:`logout_user`.
 
     Args:
         session: Database session.
@@ -575,6 +642,11 @@ async def record_failed_login(session: AsyncSession, username: str, client_ip: s
         # table small.
         cutoff = datetime.now(UTC) - timedelta(minutes=BRUTE_FORCE_WINDOW_MINUTES)
         await repo.cleanup_old(cutoff)
+        # Commit here rather than leaving the transaction to the caller: the
+        # login endpoint raises 401 straight after this call, and an attempt
+        # that is rolled back with the failed request never counts towards the
+        # lockout — which would disable brute-force protection entirely.
+        await session.commit()
     except (IntegrityError, DBAPIError) as exc:
         await session.rollback()
         logger.exception("Database error while recording failed login")
@@ -612,7 +684,11 @@ async def register_user(
     repo = UserRepository(session)
     try:
         user = await repo.create(username, hash_password(password))
+        await session.commit()
     except AuthRepositoryError as exc:
+        # The failed INSERT left the transaction unusable; the repository no
+        # longer rolls back on its own.
+        await session.rollback()
         raise AuthError(str(exc)) from exc
     except (IntegrityError, DBAPIError) as exc:
         await session.rollback()

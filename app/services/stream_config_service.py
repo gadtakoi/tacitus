@@ -35,7 +35,9 @@ async def create_stream(db: AsyncSession, request: StreamCreateRequest) -> Strea
     repo = StreamRepository(db)
     try:
         model = await repo.create(request)
+        await db.commit()
     except StreamRepositoryError as exc:
+        await db.rollback()
         raise StreamConfigError(exc.message) from exc
     logger.info("Stream created", extra={"stream": model.name})
     return _to_schema(model)
@@ -87,7 +89,9 @@ async def update_stream(db: AsyncSession, name: str, request: StreamUpdateReques
     repo = StreamRepository(db)
     try:
         model = await repo.update(name, request)
+        await db.commit()
     except StreamRepositoryError as exc:
+        await db.rollback()
         raise StreamConfigError(exc.message) from exc
     logger.info("Stream updated", extra={"stream": name})
     return _to_schema(model)
@@ -106,7 +110,9 @@ async def delete_stream(db: AsyncSession, name: str) -> None:
     repo = StreamRepository(db)
     try:
         await repo.delete(name)
+        await db.commit()
     except StreamRepositoryError as exc:
+        await db.rollback()
         raise StreamConfigError(exc.message) from exc
     logger.info("Stream deleted", extra={"stream": name})
 

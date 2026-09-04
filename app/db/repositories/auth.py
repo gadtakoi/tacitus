@@ -45,11 +45,13 @@ class UserRepository(BaseRepository):
         user = User(username=username, password_hash=password_hash)
         self._session.add(user)
         try:
-            await self._session.commit()
+            # Flush rather than commit: the INSERT has to reach the database so
+            # the unique constraint speaks up, but the transaction belongs to
+            # the caller. The session is left needing a rollback on failure,
+            # which the service does.
+            await self._session.flush()
         except IntegrityError as exc:
-            await self._session.rollback()
             raise AuthRepositoryError(f"Username '{username}' already exists") from exc
-        await self._session.refresh(user)
         return user
 
     async def get_by_username(self, username: str) -> User | None:
@@ -108,11 +110,9 @@ class RefreshTokenRepository(BaseRepository):
         )
         self._session.add(token)
         try:
-            await self._session.commit()
+            await self._session.flush()
         except IntegrityError as exc:
-            await self._session.rollback()
             raise AuthRepositoryError("Refresh token hash already exists") from exc
-        await self._session.refresh(token)
         return token
 
     async def get_by_token_hash(self, token_hash: str) -> RefreshToken | None:
@@ -174,7 +174,6 @@ class RefreshTokenRepository(BaseRepository):
             )
             .values(revoked_at=datetime.now(UTC)),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount > 0
 
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
@@ -197,7 +196,6 @@ class RefreshTokenRepository(BaseRepository):
             )
             .values(revoked_at=datetime.now(UTC)),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount
 
     async def cleanup_expired(self, cutoff: datetime | None = None) -> int:
@@ -215,7 +213,6 @@ class RefreshTokenRepository(BaseRepository):
         result = await self._session.execute(
             delete(RefreshToken).where(RefreshToken.expires_at <= cutoff),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount
 
 
@@ -241,7 +238,6 @@ class TokenBlacklistRepository(BaseRepository):
             .returning(RevokedToken)
         )
         result = await self._session.execute(stmt)
-        await self._session.commit()
         row = result.scalar_one_or_none()
         if row is not None:
             return row
@@ -281,7 +277,6 @@ class TokenBlacklistRepository(BaseRepository):
         result = await self._session.execute(
             delete(RevokedToken).where(RevokedToken.expires_at <= cutoff),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount
 
 
@@ -300,8 +295,7 @@ class FailedLoginAttemptRepository(BaseRepository):
         """
         attempt = FailedLoginAttempt(username=username, ip_address=ip_address)
         self._session.add(attempt)
-        await self._session.commit()
-        await self._session.refresh(attempt)
+        await self._session.flush()
         return attempt
 
     async def count_recent(
@@ -350,7 +344,6 @@ class FailedLoginAttemptRepository(BaseRepository):
                 FailedLoginAttempt.created_at <= cutoff,
             ),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount
 
 
@@ -382,8 +375,7 @@ class SecurityEventRepository(BaseRepository):
             details=details,
         )
         self._session.add(event)
-        await self._session.commit()
-        await self._session.refresh(event)
+        await self._session.flush()
         return event
 
     async def count_recent_by_ip(self, ip_address: str, cutoff: datetime) -> int:
@@ -417,5 +409,4 @@ class SecurityEventRepository(BaseRepository):
         result = await self._session.execute(
             delete(SecurityEvent).where(SecurityEvent.created_at <= cutoff),
         )
-        await self._session.commit()
         return cast(CursorResult[Any], result).rowcount

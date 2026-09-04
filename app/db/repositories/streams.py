@@ -43,11 +43,9 @@ class StreamRepository:
         )
         self._session.add(stream)
         try:
-            await self._session.commit()
+            await self._session.flush()
         except IntegrityError as exc:
-            await self._session.rollback()
             raise StreamRepositoryError(f"Stream '{request.name}' already exists") from exc
-        await self._session.refresh(stream)
         return stream
 
     async def get_by_name(self, name: str) -> Stream | None:
@@ -94,8 +92,7 @@ class StreamRepository:
             stream.record_enabled = request.record_enabled
 
         stream.updated_at = datetime.now(UTC)
-        await self._session.commit()
-        await self._session.refresh(stream)
+        await self._session.flush()
         return stream
 
     async def delete(self, name: str) -> None:
@@ -111,4 +108,4 @@ class StreamRepository:
         if not stream:
             raise StreamRepositoryError(f"Stream '{name}' not found")
         await self._session.delete(stream)
-        await self._session.commit()
+        await self._session.flush()

@@ -22,16 +22,14 @@ from app.schemas.auth import (
 from app.services.auth_service import (
     AuthError,
     authenticate_user,
-    clear_refresh_token,
     create_access_token,
     create_refresh_token,
     is_brute_force_locked,
+    logout_user,
     record_failed_login,
     register_user,
-    revoke_access_token,
     rotate_refresh_token,
     store_refresh_token,
-    username_from_access_token,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -180,9 +178,8 @@ async def auth_logout(
       no longer be exchanged for new access tokens. Without this step the
       refresh token would remain valid for ``jwt_refresh_expiration_days``.
 
-    The username is extracted from the access token *before* revocation:
-    ``decode_access_token`` checks the blacklist and would return ``None``
-    for an already revoked token.
+    Both revocations happen in one transaction inside ``logout_user``, so a
+    failure cannot leave the session half-terminated.
 
     Args:
         request: FastAPI request.
@@ -201,12 +198,11 @@ async def auth_logout(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Extract the username before revocation — after the jti is blacklisted
-    # decode_access_token would reject the very same token.
-    username = username_from_access_token(credentials.credentials)
-
-    await revoke_access_token(session, credentials.credentials)
-    refresh_revoked = await clear_refresh_token(session, body.refresh_token)
+    username, refresh_revoked = await logout_user(
+        session,
+        credentials.credentials,
+        body.refresh_token,
+    )
     if not refresh_revoked:
         # Already revoked, expired or unknown token: nothing to do, but log
         # it for auditing purposes.
