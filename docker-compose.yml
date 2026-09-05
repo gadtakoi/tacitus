@@ -248,7 +248,11 @@ services:
       - "${TACITUS_POSTGRES_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-15432}:5432"
       - "[::1]:${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # Не `/var/lib/postgresql/data`: начиная с 18 образ хранит данные в
+      # каталоге с номером мажорной версии (/var/lib/postgresql/18/docker) и
+      # отказывается стартовать, увидев том на старом пути. Смена этой строки
+      # на образе ≤17 требует пересоздания тома — данные лежат по другому пути.
+      - postgres-data:/var/lib/postgresql
     networks:
       - tacitus-network
     healthcheck:
