@@ -49,6 +49,16 @@ class JsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key not in _RESERVED_RECORD_ATTRS and not key.startswith("_"):
                 log_data[key] = value
+
+        # Без этого `logger.exception(...)` в JSON-формате терял traceback:
+        # в логе оставалось только сообщение, а причина сбоя — нет. В коде 14
+        # таких вызовов, и все они существуют именно ради диагностики.
+        # Формат `json` включён по умолчанию, то есть страдал production.
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            log_data["stack_info"] = self.formatStack(record.stack_info)
+
         return json.dumps(log_data, default=str, ensure_ascii=False)
 
 

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 import tempfile
 
 from app.core.logging_config import JsonFormatter, RequestIdFilter, setup_logging
@@ -139,3 +140,48 @@ def test_log_rotation_creates_backup() -> None:
         handler.close()
         backups = [f for f in os.listdir(tmpdir) if f.startswith("test.log")]
         assert len(backups) >= 2
+
+
+def test_json_formatter_includes_the_traceback() -> None:
+    """``logger.exception`` must survive JSON formatting.
+
+    The formatter emitted only the message, so every ``logger.exception`` call
+    lost its traceback — 14 of them exist precisely for diagnosis, and `json`
+    is the default format, so production was the case that suffered. A 500 in
+    the logs read as one line with no cause attached.
+    """
+    formatter = JsonFormatter()
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="Database error while registering user",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    parsed = json.loads(formatter.format(record))
+
+    assert parsed["message"] == "Database error while registering user"
+    assert "ValueError: boom" in parsed["exception"]
+    assert "Traceback" in parsed["exception"]
+
+
+def test_json_formatter_omits_exception_key_without_one() -> None:
+    """An ordinary record gains no empty ``exception`` field."""
+    formatter = JsonFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="nothing wrong",
+        args=(),
+        exc_info=None,
+    )
+
+    assert "exception" not in json.loads(formatter.format(record))
