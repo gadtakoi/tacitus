@@ -75,6 +75,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 - [Инфраструктура](docs/infrastructure.md)
 - [Тестирование](docs/testing.md)
 - [Аудит зависимостей](docs/audit.md)
+- [Ручная E2E-проверка](docs/E2E_CHECKLIST.md)
 - [Деплой](docs/deployment.md)
 
 ## Переменные окружения
