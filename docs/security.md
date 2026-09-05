@@ -535,17 +535,20 @@ uv export --frozen --no-dev --no-emit-project \
 |---|---|---|---|---|
 | `ecdsa` | 0.19.2 | PYSEC-2026-1325 | **нет** | Принятый риск. Minerva timing attack на P-256; приходит транзитивно через `python-jose`. Tacitus подписывает JWT алгоритмом HS256 (HMAC), ECDSA-путь не задействован |
 
-**Frontend (`npm audit`, 2026-09-05): 4 уязвимости, из них 3 высокой
-критичности** — все с доступным исправлением.
+**Frontend (`npm audit`, 2026-09-05): 0 уязвимостей.**
 
-| Пакет | Критичность | Суть |
-|---|---|---|
-| `react-router` | high | Unauthenticated DoS через неэффективный роут-матчинг; плюс open redirect, XSS в RSCErrorHandler, CSRF-обход |
-| `nanoid` | high | Бесконечный цикл в генераторах при нулевом/отрицательном size |
-| `postcss` | high | Path traversal при автозагрузке source map |
-| `react-router-dom` | moderate | Зависит от уязвимой версии `react-router` |
+Найденные в этот день 4 уязвимости (3 высокой критичности) закрыты в тот же
+день через `npm audit fix` — все исправления уложились в существующие
+`^`-ограничения `package.json`, менять его не потребовалось:
 
-Порядок исправления — `docs/audit.md` → Frontend.
+| Пакет | Было | Стало | Что закрыто |
+|---|---|---|---|
+| `react-router` | 7.17.0 | 7.18.3 | Unauthenticated DoS через роут-матчинг, open redirect, XSS в `RSCErrorHandler`, обход CSRF |
+| `react-router-dom` | 7.17.0 | 7.18.3 | Зависимость от уязвимой версии `react-router` |
+| `nanoid` | 3.3.12 | 3.3.18 | Бесконечный цикл в генераторах |
+| `postcss` | 8.5.15 | 8.5.28 | Path traversal при автозагрузке source map |
+
+Процедура — `docs/audit.md` → Frontend.
 
 Предыдущий аудит (2026-09-03) находил **14 уязвимостей в 5 пакетах**. Они
 закрылись при перегенерации лок-файла из `uv.lock`, потому что старый
