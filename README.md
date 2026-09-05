@@ -74,6 +74,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 - [Frontend](docs/frontend.md)
 - [Инфраструктура](docs/infrastructure.md)
 - [Тестирование](docs/testing.md)
+- [Аудит зависимостей](docs/audit.md)
 - [Деплой](docs/deployment.md)
 
 ## Переменные окружения

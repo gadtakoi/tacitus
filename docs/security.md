@@ -506,16 +506,18 @@ deploy:
 > Расхождение было видно по версиям: лок-файл фиксировал `boto3 1.43.24`, в
 > образе стояла `1.43.87`.
 
-> ⚠️ Хуки `pip-audit` и `npm audit` **закомментированы** в
-> `.pre-commit-config.yaml` (вместе с локальным `pytest`) — автоматического
-> сканирования уязвимостей на коммите сейчас нет. Активные хуки: базовые
-> проверки `pre-commit-hooks`, `ruff` и `ruff-format`. До включения хуков
-> запускайте аудит вручную:
+Сканирование уязвимостей запускается **вручную** — процедура и разбор вывода
+в [`docs/audit.md`](audit.md). Коротко:
 
 ```bash
-uv run pip-audit -r requirements.txt
-cd frontend && npm audit --audit-level=moderate
+pip-audit -r requirements.txt
+cd frontend && npm audit
 ```
+
+> Хуки `pip-audit` и `npm audit` закомментированы в `.pre-commit-config.yaml`
+> намеренно: они ходят в сеть, добавляют около 40 секунд к коммиту и
+> срабатывают на появление нового CVE, а не на изменение кода. Активные хуки —
+> базовые проверки `pre-commit-hooks`, `ruff`, `ruff-format` и `mypy`.
 
 Обновление lock-файла (подробнее — `docs/uv.md`):
 
@@ -525,13 +527,25 @@ uv export --frozen --no-dev --no-emit-project \
   --format requirements-txt --output-file requirements.txt
 ```
 
-#### Результат аудита от 2026-09-04
+#### Результат аудита от 2026-09-05
 
 `pip-audit -r requirements.txt` — **1 известная уязвимость в 1 пакете**.
 
 | Пакет | Версия | ID | Fix | Применимость к Tacitus |
 |---|---|---|---|---|
 | `ecdsa` | 0.19.2 | PYSEC-2026-1325 | **нет** | Принятый риск. Minerva timing attack на P-256; приходит транзитивно через `python-jose`. Tacitus подписывает JWT алгоритмом HS256 (HMAC), ECDSA-путь не задействован |
+
+**Frontend (`npm audit`, 2026-09-05): 4 уязвимости, из них 3 высокой
+критичности** — все с доступным исправлением.
+
+| Пакет | Критичность | Суть |
+|---|---|---|
+| `react-router` | high | Unauthenticated DoS через неэффективный роут-матчинг; плюс open redirect, XSS в RSCErrorHandler, CSRF-обход |
+| `nanoid` | high | Бесконечный цикл в генераторах при нулевом/отрицательном size |
+| `postcss` | high | Path traversal при автозагрузке source map |
+| `react-router-dom` | moderate | Зависит от уязвимой версии `react-router` |
+
+Порядок исправления — `docs/audit.md` → Frontend.
 
 Предыдущий аудит (2026-09-03) находил **14 уязвимостей в 5 пакетах**. Они
 закрылись при перегенерации лок-файла из `uv.lock`, потому что старый
