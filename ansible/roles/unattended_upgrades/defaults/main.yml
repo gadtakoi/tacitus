@@ -1,0 +1,13 @@
+---
+# Whether to reboot automatically when an installed update needs it (kernel,
+# libc, etc.). Off by default: this host runs stateful services — PostgreSQL
+# and, if MediaMTX is recording, active RTSP sessions — and an unattended
+# reboot mid-recording is a worse outcome than a delayed kernel update.
+# Security patches to already-running packages (the actual point of this
+# role) still get installed and take effect without a reboot; only the
+# packages that specifically require one are held until an operator reboots
+# by hand.
+unattended_upgrades_auto_reboot: false
+
+# Only used when unattended_upgrades_auto_reboot is true.
+unattended_upgrades_auto_reboot_time: "02:00"

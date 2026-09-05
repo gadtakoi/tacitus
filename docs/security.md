@@ -484,6 +484,41 @@ deploy:
       memory: 128M
 ```
 
+### 7.5 Host Firewall & Patching
+
+Container hardening (7.1–7.4) protects what runs inside Docker. The host it
+runs on is a separate surface, and `docker-compose.yml`'s port bindings do
+not defend it: a bind to `127.0.0.1` keeps a port off the network regardless
+of any host firewall, but nothing there stops an operator — or a later
+change — from widening `TACITUS_MTX_RTSP_BIND` to `0.0.0.0` without a
+firewall rule to match. Two Ansible roles cover the host itself, both on by
+default:
+
+- **`firewall`** (`ansible/roles/firewall`) installs `ufw`, sets default-deny
+  on incoming connections, and opens exactly what `docker-compose.yml`
+  actually publishes to `0.0.0.0`: SSH (whatever port Ansible is already
+  using — never a hardcoded 22 that could lock out a customized setup) and
+  `80`/`443`. It runs *before* `ssl_cert` (Let's Encrypt's webroot challenge
+  needs port 80 reachable) and *before* `app_deploy` (the host is closed
+  before anything starts listening on it). A `wait_for_connection` check
+  right after enabling the firewall catches a lockout — wrong SSH port,
+  typo in the rule — while the play can still fail loudly instead of the
+  next `ansible-playbook` run just timing out.
+- **`unattended_upgrades`** (`ansible/roles/unattended_upgrades`) installs
+  `unattended-upgrades` and enables the daily security-update cycle. It
+  deliberately does not redefine which origin counts as "security" — that
+  stays whatever the distribution's own package ships, rather than a
+  second definition that could drift from it. Automatic **reboot is off by
+  default**: this host runs PostgreSQL and, when MediaMTX is actively
+  recording, live RTSP sessions, and an unplanned reboot mid-recording is a
+  worse outcome than a delayed kernel update. Patches to already-running
+  packages still apply without a reboot.
+
+Both are Debian/Ubuntu-only (matching `docker_install`'s existing
+assumption) and toggle off independently: `-e firewall_enabled=false` or
+`-e unattended_upgrades_enabled=false`, e.g. for a host whose firewalling
+already happens at the cloud provider's security-group layer.
+
 ---
 
 ## 8. Dependency & Supply Chain Security
@@ -639,7 +674,15 @@ python scripts/generate-sbom.py
 - [ ] `TACITUS_JWT_SECRET` — минимум 32 символа, не дефолт
 - [ ] MediaMTX credentials (`mediamtx_publish_password`, `mediamtx_read_password`,
       `mediamtx_api_password`) — не dev-плейсхолдеры
-- [ ] RTSP-порт `8554` закрыт firewall'ом либо привязан к доверенному интерфейсу
+- [ ] RTSP-порт `8554` привязан к доверенному интерфейсу (по умолчанию —
+      loopback) **и** закрыт хостовым firewall'ом — роль `firewall` открывает
+      только 22/80/443, поэтому по умолчанию 8554 недоступен извне без
+      дополнительного действия на обоих уровнях
+- [ ] Хостовый firewall (`ufw`) активен: `ansible-playbook ... --tags firewall`
+      либо проверить вручную `ufw status`
+- [ ] Автообновления безопасности хоста включены (`unattended-upgrades`) —
+      актуально именно потому, что образы приложения закреплены точными
+      патч-тегами и сами не обновляются (см. `docs/audit.md`)
 - [ ] S3 credentials — не `minioadmin`
 - [ ] HTTPS включён
 - [ ] Security headers настроены в nginx

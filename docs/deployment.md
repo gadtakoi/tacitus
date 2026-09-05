@@ -309,6 +309,8 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
 | `tacitus_postgres_password` | `change-me-in-production` | Пароль PostgreSQL                 |
 | `tacitus_postgres_db`   | `tacitus`                 | Имя базы данных                       |
 | `tacitus_rate_limit_storage_uri` | `redis://redis:6379` | Backend для rate limiting          |
+| `firewall_enabled`     | `true`                    | Настраивать `ufw` на хосте (только Debian/Ubuntu) |
+| `unattended_upgrades_enabled` | `true`              | Включать автообновления безопасности (только Debian/Ubuntu) |
 
 Полный список — в файлах `ansible/group_vars/all.yml` и `ansible/roles/*/defaults/main.yml`.
 
@@ -338,12 +340,15 @@ docker compose exec postgres pg_dump -U tacitus -Fc tacitus > tacitus_backup.dum
 
 ### Выборочный запуск (теги)
 
-| Тег        | Что делает                                       |
-|------------|--------------------------------------------------|
-| `docker`   | Только установка Docker                          |
-| `ssl`      | Только получение/обновление SSL                  |
-| `app`      | Только копирование кода и перезапуск контейнеров |
-| `mediamtx` | Только деплой MediaMTX конфигурации и запуск     |
+| Тег                  | Что делает                                          |
+|----------------------|------------------------------------------------------|
+| `docker`             | Только установка Docker                              |
+| `firewall`           | Только настройка `ufw`                               |
+| `unattended-upgrades`| Только настройка автообновлений безопасности         |
+| `security`           | `firewall` + `unattended-upgrades` вместе            |
+| `ssl`                | Только получение/обновление SSL                      |
+| `app`                | Только копирование кода и перезапуск контейнеров     |
+| `mediamtx`           | Только деплой MediaMTX конфигурации и запуск         |
 
 Пример — обновить только код без переустановки Docker:
 
@@ -372,6 +377,16 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbook.yml \
   пользователя в группу `docker`.
 - **`ssl_cert`** — устанавливает Certbot, получает SSL-сертификат через webroot-режим, деплоит nginx-конфиг с HTTPS,
   настраивает автообновление по cron.
+- **`firewall`** — устанавливает `ufw`, включает default-deny на входящие соединения, открывает SSH-порт (тот же,
+  которым Ansible уже подключился — переопределить не получится случайно) и `80`/`443`. Запускается **до**
+  `ssl_cert`, чтобы webroot-проверке Let's Encrypt было куда стучаться, и **до** `app_deploy`, чтобы хост был закрыт
+  прежде, чем на нём поднимется что-либо. Только Debian/Ubuntu; отключается `-e firewall_enabled=false`.
+- **`unattended_upgrades`** — устанавливает `unattended-upgrades`, включает ежедневную установку security-патчей
+  через `/etc/apt/apt.conf.d/20auto-upgrades`. Origins-паттерн (что считается «security») не переопределяется —
+  используется тот, что уже задан пакетом дистрибутива. Автоматический перезапуск **выключен по умолчанию**
+  (`unattended_upgrades_auto_reboot: false`): хост держит PostgreSQL и, возможно, идущую запись RTSP, и
+  незапланированный ребут — худший исход, чем отложенное обновление ядра. Отключается `-e
+  unattended_upgrades_enabled=false`.
 - **`app_deploy`** — создаёт директорию `/opt/tacitus`, копирует исходный код, Dockerfile, docker-compose.yml, рендерит
   `.env` из шаблона, запускает `docker compose up --build -d`.
 - **`mediamtx`** — создаёт директорию `./recordings` с владельцем `1000:1000`, рендерит `mediamtx.yml` из шаблона,

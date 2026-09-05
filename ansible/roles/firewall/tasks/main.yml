@@ -1,0 +1,61 @@
+---
+# Pre-checks
+- name: Pre-check | Verify target OS is Debian-family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == "Debian"
+    fail_msg: >-
+      This role manages ufw, which is Debian/Ubuntu-specific. Skip it
+      (--skip-tags firewall) on other distributions and configure the host
+      firewall manually.
+
+# Configuration
+- name: Install ufw
+  ansible.builtin.package:
+    name: ufw
+    state: present
+
+# Verbose output is what carries the default-policy line ("Default: deny
+# (incoming), allow (outgoing)..."), not just the rule list — every check
+# below reads from this one capture instead of re-querying ufw per task.
+- name: Check current ufw state
+  ansible.builtin.command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+# `ufw default ...` always prints "policy changed", even when the policy
+# already matches — it does not check before it sets. Gating on the
+# captured state rather than the command's own claim is what makes this
+# task idempotent instead of "changed" on every single run.
+- name: Set default incoming policy to deny
+  ansible.builtin.command: ufw default deny incoming
+  when: "'Default: deny (incoming)' not in ufw_status.stdout"
+
+- name: Set default outgoing policy to allow
+  ansible.builtin.command: ufw default allow outgoing
+  when: "'allow (outgoing)' not in ufw_status.stdout"
+
+# SSH first and separately from the loop below: locking this out means
+# losing the only way in without console/provider access, so it gets its
+# own explicit step rather than living inside a generic ports list.
+- name: Allow SSH
+  ansible.builtin.command: "ufw allow {{ firewall_ssh_port }}/tcp comment 'ssh (tacitus-managed)'"
+  when: (firewall_ssh_port | string) + "/tcp" not in ufw_status.stdout
+
+- name: Allow application ports
+  ansible.builtin.command: "ufw allow {{ item }}/tcp comment 'tacitus-managed'"
+  loop: "{{ firewall_allowed_tcp_ports + firewall_extra_allowed_tcp_ports }}"
+  when: (item | string) + "/tcp" not in ufw_status.stdout
+
+- name: Enable ufw
+  ansible.builtin.command: ufw --force enable
+  when: "'Status: active' not in ufw_status.stdout"
+
+# Post-check
+# The SSH allow rule above is what stands between this play and locking
+# itself out of the host. Confirming the connection survives here, while an
+# operator can still fix it interactively, is cheaper than finding out on
+# the next ansible run.
+- name: Post-check | Verify the connection survives the firewall
+  ansible.builtin.wait_for_connection:
+    timeout: 15

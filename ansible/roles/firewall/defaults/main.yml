@@ -1,0 +1,25 @@
+---
+# Port SSH actually listens on. Defaults to whatever Ansible is already using
+# to reach the host (inventory's ansible_port, or 22), so a customized SSH
+# port never gets locked out by its own default.
+firewall_ssh_port: "{{ ansible_port | default(22) }}"
+
+# Ports the deployed stack needs reachable from the internet. Matches exactly
+# what docker-compose.yml publishes to 0.0.0.0: nginx on 80/443.
+#
+# RTSP (mediamtx_rtsp_port) and PostgreSQL (postgres_host_port) are
+# deliberately NOT here: docker-compose.yml binds both to loopback by
+# default, and this role's job is to match that exposure, not widen it.
+# Opening them here without also flipping TACITUS_MTX_RTSP_BIND /
+# TACITUS_POSTGRES_BIND to 0.0.0.0 in .env would be a firewall hole leading
+# nowhere; opening them there without a matching rule here would be
+# equally useless. If an operator makes that change deliberately (see the
+# comment next to TACITUS_MTX_RTSP_BIND in docker-compose.yml), add the port
+# to firewall_extra_allowed_tcp_ports below.
+firewall_allowed_tcp_ports:
+  - 80
+  - 443
+
+# Extra ports an operator wants open, e.g. after deliberately exposing RTSP
+# to the LAN. Empty by default.
+firewall_extra_allowed_tcp_ports: []

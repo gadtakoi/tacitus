@@ -1,0 +1,19 @@
+// Managed by ansible/roles/unattended_upgrades — do not edit by hand.
+//
+// Origins-Pattern is intentionally left untouched: the unattended-upgrades
+// package ships /etc/apt/apt.conf.d/50unattended-upgrades with the
+// ${distro_id}:${distro_codename}-security origin already enabled by
+// default on both Debian and Ubuntu. Redefining it here would only risk
+// diverging from what each distribution's maintainers consider "security"
+// for their own release.
+//
+// This file is read after 50unattended-upgrades (lexical order), so these
+// settings override the package defaults for the keys below.
+
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+{% if unattended_upgrades_auto_reboot %}
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_upgrades_auto_reboot_time }}";
+{% else %}
+Unattended-Upgrade::Automatic-Reboot "false";
+{% endif %}

@@ -52,6 +52,13 @@ tacitus_rate_limit_storage_uri: "redis://redis:6379"
 # Docker settings
 docker_user: "{{ ansible_user }}"
 
+# Host hardening. On by default (secure-by-default), toggle off per-host if
+# a cloud provider's security groups already gate inbound traffic and a
+# second, host-level firewall would just be one more thing to keep in sync,
+# or if the host has its own unattended-upgrades policy already.
+firewall_enabled: true
+unattended_upgrades_enabled: true
+
 # MediaMTX settings
 mediamtx_rtsp_port: 8554
 mediamtx_rtmp_port: 1935

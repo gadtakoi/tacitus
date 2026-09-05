@@ -42,6 +42,14 @@
     - role: docker_install
       tags: [docker, install]
 
+    - role: firewall
+      tags: [firewall, security]
+      when: firewall_enabled | bool
+
+    - role: unattended_upgrades
+      tags: [unattended-upgrades, security]
+      when: unattended_upgrades_enabled | bool
+
     - role: ssl_cert
       tags: [ssl, cert]
       when: tacitus_enable_https | bool

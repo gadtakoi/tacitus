@@ -1,0 +1,42 @@
+---
+# Pre-checks
+- name: Pre-check | Verify target OS is Debian-family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == "Debian"
+    fail_msg: >-
+      This role installs the Debian/Ubuntu unattended-upgrades package.
+      Skip it (--skip-tags unattended-upgrades) on other distributions.
+
+# Configuration
+- name: Install unattended-upgrades
+  ansible.builtin.package:
+    name: unattended-upgrades
+    state: present
+
+# Written directly rather than via dpkg-reconfigure: this is exactly the two
+# lines dpkg-reconfigure writes, and templating them keeps the setting
+# visible in the repository instead of hidden behind a debconf prompt.
+- name: Enable the daily update/upgrade cadence
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure unattended-upgrades overrides
+  ansible.builtin.template:
+    src: 51-tacitus-overrides.j2
+    dest: /etc/apt/apt.conf.d/51-tacitus-overrides
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure the unattended-upgrades service is enabled and running
+  ansible.builtin.systemd:
+    name: unattended-upgrades
+    state: started
+    enabled: true
