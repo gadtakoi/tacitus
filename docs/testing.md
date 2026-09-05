@@ -55,6 +55,14 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 (`${POSTGRES_HOST_PORT:-15432}:5432`). Переопределяется через
 `TACITUS_DATABASE_URL`.
 
+> Порт публикуется **только на loopback**, но на обоих адресах — `127.0.0.1`
+> и `[::1]`. Это не избыточность: на Windows `localhost` резолвится сначала в
+> IPv6, и при публикации только на `127.0.0.1` каждое подключение ждёт ~2 с
+> таймаута перед откатом на IPv4. Фикстуры используют `NullPool`, то есть
+> открывают соединение на каждый тест, — прогон замедлялся с 78 секунд до
+> восьми с лишним минут. Если тесты внезапно поползли, проверьте
+> `docker port tacitus-postgres`: там должны быть обе строки.
+
 > Без доступной PostgreSQL пропускается порядка 60 тестов — вся логика auth,
 > репозиториев и миграций, — причём **молча**, обычным `skip`. Перед мержем
 > убеждайтесь, что в итоговой строке pytest нет `skipped`, иначе изменения в
@@ -85,7 +93,7 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 | `test_client_ip.py`                  | Определение IP клиента, подделка `X-Forwarded-For` | нет      |
 | `test_rate_limit.py`                 | Лимиты и `429`                                     | да       |
 | `test_cors.py`                       | CORS preflight, неизвестный origin                 | нет      |
-| `test_middleware.py`                 | `MaxRequestSizeMiddleware`                         | нет      |
+| `test_middleware.py`                 | `MaxRequestSizeMiddleware`, порядок middleware     | нет      |
 | `test_error_handling.py`             | Обработчики ошибок, отсутствие stack trace         | нет      |
 | `test_logging.py`                    | `JsonFormatter`, request_id                        | нет      |
 | `test_security_logging.py`           | `log_security_event`                               | нет      |
@@ -108,7 +116,7 @@ docker compose exec postgres psql -U tacitus -d tacitus \
 
 ## Покрытие
 
-Текущее покрытие: **91%** (1404 statements, 131 missed) — 259 тестов, все
+Текущее покрытие: **91%** (1361 statements, 127 missed) — 258 тестов, все
 проходят.
 
 Значение измеряется **с поднятой PostgreSQL** — без неё цифра занижена, потому
@@ -124,8 +132,9 @@ pytest tests/ --cov=app --cov-report=term-missing
 | Модуль | Покрытие | Чего не хватает |
 |--------|----------|-----------------|
 | `db/engine.py` | 56% | Реальный `get_db_session` (в тестах подменяется) |
+| `services/auth_service.py` | 72% | Ветки обработки ошибок БД (`AppError` на `DBAPIError`) |
+| `core/exceptions.py` | 84% | Обработчики `integrity_error` / `dbapi_error` |
 | `services/s3_service.py` | 84% | Ветки `ClientError` при list/upload/delete |
-| `services/auth_service.py` | 67% | Ветки обработки ошибок БД (`AppError` на `DBAPIError`) |
-| `core/exceptions.py` | 70% | Обработчики `integrity_error` / `dbapi_error` |
+| `core/logging_config.py` | 85% | Ветки файлового хендлера и ротации |
 
 Бейдж в `README.md` обновляется вручную по результату этой команды.
