@@ -17,6 +17,22 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # mypy запускается из окружения проекта, а не через mirrors-mypy: тот ставит
+  # mypy в изолированный virtualenv и не видит sqlalchemy, fastapi и pydantic,
+  # пока их не продублируешь в additional_dependencies — второй список
+  # зависимостей, который неизбежно разойдётся с pyproject.toml.
+  #
+  # pass_filenames: false — намеренно. Проверка типов на подмножестве файлов
+  # даёт и ложные ошибки, и пропуски: mypy нужен весь пакет целиком.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: bash -c 'PY=.venv/Scripts/python; [ -x "$PY" ] || PY=.venv/bin/python; "$PY" -m mypy app tests'
+        language: system
+        types: [python]
+        pass_filenames: false
+
 
 #  - repo: local
 #    hooks:
@@ -27,6 +43,11 @@ repos:
 #        types: [python]
 #        pass_filenames: false
 
+# pip-audit сознательно НЕ включён в pre-commit: он ходит в сеть за базой
+# уязвимостей, добавляет ~40 секунд к каждому коммиту, и его повод сработать —
+# появление нового CVE, а не изменение кода. Иначе коммит, правящий README,
+# падал бы из-за уязвимости, опубликованной сегодня утром.
+# Его место — запуск по расписанию, см. docs/security.md §8.1.
 #      - id: pip-audit
 #        name: pip-audit
 #        entry: bash -c '.venv/Scripts/python -m pip_audit -r requirements.txt'
