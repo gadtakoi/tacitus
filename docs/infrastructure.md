@@ -6,7 +6,7 @@
 services:
   app:              # FastAPI (Uvicorn)
   nginx:            # Reverse proxy + static files
-  postgres:         # PostgreSQL 16 — пользователи, токены, security-события
+  postgres:         # PostgreSQL 18 — пользователи, токены, security-события
   db-migrations:    # Alembic upgrade head (init container, Exit 0)
   redis:            # Хранилище счётчиков rate limiting
   minio:            # S3-compatible storage
@@ -21,7 +21,7 @@ services:
 
 ## PostgreSQL
 
-- Образ `postgres:16.11-alpine` (точный патч-тег, см. раздел Security)
+- Образ `postgres:18.6-alpine` (точный патч-тег, см. раздел Security)
 - Креды из `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`
 - Наружу пробрасывается `${POSTGRES_HOST_PORT:-15432}` (нестандартный порт,
   чтобы не конфликтовать с локальным PostgreSQL), **только на loopback** —
@@ -121,9 +121,9 @@ Encrypt».
 ## Security
 
 - Версии образов зафиксированы точными патч-тегами, а не только мажорными:
-  `postgres:16.11-alpine`, `redis:7.4.10-alpine`, `python:3.14.5-slim`,
+  `postgres:18.6-alpine`, `redis:7.4.10-alpine`, `python:3.14.5-slim`,
   `node:22.23.2-alpine`, `nginx:1.27.5-alpine`, MinIO и MediaMTX — по дате
-  релиза. Мажорный тег вроде `16-alpine` не `latest`, но всё равно движется:
+  релиза. Мажорный тег вроде `18-alpine` не `latest`, но всё равно движется:
   пересборка через полгода принесла бы другой патч-релиз без единого
   изменения в репозитории. Обновление версии — осознанная правка строки;
   проверяется тестом `test_upstream_images_are_pinned_to_an_exact_release`

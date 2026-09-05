@@ -29,6 +29,9 @@
     - "docker-compose.yml"
     - "pyproject.toml"
     - "alembic.ini"
+    # The image build reads this directly (COPY requirements.txt), so it has to
+    # be in the deploy directory, not just in the repo.
+    - "requirements.txt"
   notify: Restart Tacitus
 
 - name: Copy database migrations
@@ -102,14 +105,24 @@
     mode: "0755"
   become: true
 
+# compose mounts mediamtx.yml into the container, so it has to be a real file
+# before anything starts — otherwise Docker creates a directory at that path.
+- name: Render MediaMTX configuration before the stack starts
+  ansible.builtin.include_role:
+    name: mediamtx
+    tasks_from: config
+
 - name: Rebuild nginx image (no cache)
   ansible.builtin.command:
     cmd: "docker compose build --no-cache nginx"
     chdir: "{{ tacitus_deploy_dir }}"
 
+# --build, not a bare `up`: tacitus-app is built locally and published to no
+# registry, so on a first deploy compose would try to pull it and fail with
+# "pull access denied" instead of building it.
 - name: Build and start services
   ansible.builtin.command:
-    cmd: "docker compose up -d"
+    cmd: "docker compose up -d --build"
     chdir: "{{ tacitus_deploy_dir }}"
   register: compose_up
   changed_when: "'Started' in compose_up.stdout or 'Created' in compose_up.stdout"

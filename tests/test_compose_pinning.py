@@ -91,7 +91,7 @@ def test_cleanup_disables_the_inherited_healthcheck() -> None:
 LOCAL_IMAGES = ("tacitus-app", "tacitus-nginx")
 
 # A pinned upstream tag names an exact release: at least two numeric components
-# (16.11-alpine, 3.14.5-slim, 1.27.5-alpine) or a dated release string
+# (18.6-alpine, 3.14.5-slim, 1.27.5-alpine) or a dated release string
 # (RELEASE.2025-04-22T22-12-26Z). A single component — 16-alpine, 7-alpine,
 # 22-alpine — is a moving target that silently changes under `docker pull`.
 _EXACT_VERSION = re.compile(r"\d+\.\d+|RELEASE\.\d{4}-\d{2}-\d{2}")
@@ -129,7 +129,7 @@ def test_no_image_uses_the_latest_tag() -> None:
 def test_upstream_images_are_pinned_to_an_exact_release() -> None:
     """Third-party images name a full version, not a moving major tag.
 
-    ``postgres:16-alpine`` is not ``latest``, but it still moves: a rebuild
+    ``postgres:18-alpine`` is not ``latest``, but it still moves: a rebuild
     months later brings a different PostgreSQL patch release with no change in
     the repository.
     """

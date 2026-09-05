@@ -34,31 +34,10 @@
     timeout: 2
   when: mtx_container.stdout == ""
 
-# Configuration
-- name: Ensure MediaMTX configuration directory exists
-  ansible.builtin.file:
-    path: "{{ tacitus_deploy_dir }}/mediamtx"
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0755"
-
-- name: Ensure MediaMTX recordings directory exists
-  ansible.builtin.file:
-    path: "{{ tacitus_deploy_dir }}/recordings"
-    state: directory
-    owner: "1000"
-    group: "1000"
-    mode: "0755"
-
-- name: Render MediaMTX configuration
-  ansible.builtin.template:
-    src: mediamtx.yml.j2
-    dest: "{{ tacitus_deploy_dir }}/mediamtx/mediamtx.yml"
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0644"
-  notify: Restart MediaMTX
+# Configuration (already applied by app_deploy; re-run here to pick up changes
+# when this role is invoked on its own via --tags mediamtx)
+- name: Apply MediaMTX configuration
+  ansible.builtin.include_tasks: config.yml
 
 # Deployment
 - name: Start or update MediaMTX container

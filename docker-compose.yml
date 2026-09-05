@@ -222,10 +222,10 @@ services:
           memory: 64M
 
   postgres:
-    # Точный патч-тег, а не `16-alpine`: плавающий тег молча подменял версию
+    # Точный патч-тег, а не `18-alpine`: плавающий тег молча подменял версию
     # СУБД при `docker compose pull`, то есть окружение переставало быть
     # воспроизводимым. Обновление версии — осознанное изменение этой строки.
-    image: postgres:16.11-alpine
+    image: postgres:18.6-alpine
     container_name: tacitus-postgres
     restart: unless-stopped
     env_file:

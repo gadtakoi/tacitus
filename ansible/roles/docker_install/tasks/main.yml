@@ -17,16 +17,28 @@
     update_cache: true
   when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
 
+- name: Ensure apt keyring directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
+
+# apt-key (and ansible.builtin.apt_key, which shells out to it) was removed in
+# Ubuntu 25.10+; a keyring file referenced by signed-by= is the only way that
+# works on both current and older Debian-family releases.
 - name: Add Docker GPG key
-  ansible.builtin.apt_key:
+  ansible.builtin.get_url:
     url: https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg
-    state: present
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
   when: ansible_facts['os_family'] == "Debian" and docker_version.rc != 0
 
 - name: Add Docker repository
   ansible.builtin.apt_repository:
     repo: >
-      deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}]
+      deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}
+      signed-by=/etc/apt/keyrings/docker.asc]
       https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}
       {{ ansible_facts['lsb']['codename'] }} stable
     state: present
