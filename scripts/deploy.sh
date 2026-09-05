@@ -46,6 +46,8 @@ usage() {
   --https               Включить HTTPS и выпустить сертификат
   --staging             Использовать staging-сертификат Let's Encrypt
   --tags TAGS           Передать --tags в ansible-playbook (например app)
+  --update-os           Обновить пакеты ОС (apt upgrade) перед деплоем
+  --update-os-full      То же, но dist-upgrade (может удалять пакеты)
   --no-swap             Не создавать swap на малой машине
   -e, --var KEY=VALUE   Дополнительная переменная для плейбука (можно повторять)
   -h, --help            Показать эту справку
@@ -55,6 +57,7 @@ usage() {
   scripts/deploy.sh 1.2.3.4 --user ubuntu --ssh-key ~/.ssh/id_ed25519
   scripts/deploy.sh 1.2.3.4 --domain example.com --email me@example.com --https --staging
   scripts/deploy.sh 1.2.3.4 --tags app
+  scripts/deploy.sh 1.2.3.4 --update-os
 EOF
 }
 
@@ -68,6 +71,8 @@ enable_https=false
 certbot_staging=false
 tags=""
 ensure_swap=true
+update_os=false
+update_os_upgrade="safe"
 extra_vars=()
 
 while [ $# -gt 0 ]; do
@@ -81,6 +86,8 @@ while [ $# -gt 0 ]; do
         --https)   enable_https=true; shift ;;
         --staging) certbot_staging=true; shift ;;
         --tags)    tags="${2:?--tags требует значение}"; shift 2 ;;
+        --update-os)      update_os=true; shift ;;
+        --update-os-full) update_os=true; update_os_upgrade="full"; shift ;;
         --no-swap) ensure_swap=false; shift ;;
         -e|--var)  extra_vars+=("${2:?--var требует значение}"); shift 2 ;;
         -*)        die "неизвестная опция: $1 (см. --help)" ;;
@@ -123,6 +130,7 @@ remote_args=(
 [ "$enable_https" = true ] && remote_args+=(--https)
 [ "$certbot_staging" = true ] && remote_args+=(--staging)
 [ "$ensure_swap" = false ] && remote_args+=(--no-swap)
+[ "$update_os" = true ] && remote_args+=(--update-os "$update_os_upgrade")
 [ -n "$tags" ] && remote_args+=(--tags "$tags")
 for var in ${extra_vars+"${extra_vars[@]}"}; do
     remote_args+=(--var "$var")

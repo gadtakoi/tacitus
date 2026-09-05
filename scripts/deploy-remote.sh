@@ -33,6 +33,8 @@ email=""
 enable_https=false
 certbot_staging=false
 ensure_swap=true
+update_os=false
+update_os_upgrade="safe"
 tags=""
 extra_vars=()
 
@@ -45,6 +47,7 @@ while [ $# -gt 0 ]; do
         --https)       enable_https=true; shift ;;
         --staging)     certbot_staging=true; shift ;;
         --no-swap)     ensure_swap=false; shift ;;
+        --update-os)   update_os=true; update_os_upgrade="${2:?}"; shift 2 ;;
         --tags)        tags="${2:?}"; shift 2 ;;
         --var)         extra_vars+=("${2:?}"); shift 2 ;;
         *)             die "неизвестный аргумент: $1" ;;
@@ -160,6 +163,13 @@ else
     # CORS-origins по умолчанию выводятся из target_host, а он подменён на
     # 127.0.0.1 — задаём адрес, по которому приложение открывают на самом деле.
     ansible_args+=(-e "tacitus_cors_origins=http://$public_host")
+fi
+
+if [ "$update_os" = true ]; then
+    ansible_args+=(
+        -e os_update_enabled=true
+        -e "os_update_upgrade=$update_os_upgrade"
+    )
 fi
 
 [ -n "$tags" ] && ansible_args+=(--tags "$tags")

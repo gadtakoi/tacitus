@@ -39,6 +39,13 @@
       when: tacitus_environment == 'production'
 
   roles:
+    # Первым: свежий индекс apt и обновлённые пакеты нужны до установки Docker,
+    # а если обновление потребует перезагрузки, она случится до того, как на
+    # хосте что-то поднимется. Выключено по умолчанию (см. os_update_enabled).
+    - role: os_update
+      tags: [os-update, packages]
+      when: os_update_enabled | bool
+
     - role: docker_install
       tags: [docker, install]
 

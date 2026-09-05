@@ -52,6 +52,14 @@ tacitus_rate_limit_storage_uri: "redis://redis:6379"
 # Docker settings
 docker_user: "{{ ansible_user }}"
 
+# Обновление пакетов самой ОС (apt upgrade) перед деплоем. Выключено по
+# умолчанию и включается осознанно: `-e os_update_enabled=true` или
+# `scripts/deploy.sh <host> --update-os`. Причина — обновление меняет состояние
+# хоста способом, который деплой приложения не откатывает: перезапускаются
+# системные сервисы, может потребоваться перезагрузка. Регулярные
+# security-патчи ставит роль unattended_upgrades, ей этот флаг не нужен.
+os_update_enabled: false
+
 # Host hardening. On by default (secure-by-default), toggle off per-host if
 # a cloud provider's security groups already gate inbound traffic and a
 # second, host-level firewall would just be one more thing to keep in sync,

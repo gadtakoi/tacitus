@@ -1,0 +1,80 @@
+---
+# Pre-checks
+- name: Pre-check | Verify target OS is Debian-family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == "Debian"
+    fail_msg: >-
+      This role drives apt. Skip it (-e os_update_enabled=false) on other
+      distributions and update packages with the platform's own tooling.
+
+- name: Pre-check | Verify the requested upgrade type is known
+  ansible.builtin.assert:
+    that:
+      - os_update_upgrade in ['safe', 'full', 'dist']
+    fail_msg: >-
+      os_update_upgrade must be one of safe|full|dist,
+      got '{{ os_update_upgrade }}'.
+
+# Update
+- name: Refresh the apt package index
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ os_update_cache_valid_time }}"
+
+# Долгие обновления на медленной машине упираются в дефолтные таймауты dpkg
+# только при интерактивных вопросах — apt-модуль запускает dpkg в
+# noninteractive-режиме, поэтому явные ответы на debconf-вопросы не нужны.
+# force_apt_get: apt-get, а не aptitude, — он есть на любом Debian-хосте.
+- name: Upgrade installed packages ({{ os_update_upgrade }})
+  ansible.builtin.apt:
+    upgrade: "{{ os_update_upgrade }}"
+    force_apt_get: true
+  register: os_update_result
+
+- name: Report what the upgrade changed
+  ansible.builtin.debug:
+    msg: >-
+      apt upgrade ({{ os_update_upgrade }}):
+      {{ 'пакеты обновлены' if os_update_result.changed else 'обновлять нечего' }}
+
+- name: Remove packages that are no longer required
+  ansible.builtin.apt:
+    autoremove: true
+  when: os_update_autoremove | bool
+
+- name: Clean the local archive of downloaded package files
+  ansible.builtin.apt:
+    autoclean: true
+  when: os_update_autoclean | bool
+
+# Post-checks
+- name: Post-check | Detect whether the upgrade requires a reboot
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: os_update_reboot_required
+
+# Перезагрузка при ansible_connection=local убила бы сам процесс ansible —
+# именно так плейбук и запускается через scripts/deploy.sh (Ansible работает
+# НА сервере с локальным подключением). В этом случае роль не перезагружает
+# хост, а сообщает об этом: оператор перезагрузит сервер сам, вне деплоя.
+- name: Reboot the host to finish the upgrade
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ os_update_reboot_timeout }}"
+    msg: "Reboot requested by tacitus os_update role"
+  when:
+    - os_update_reboot | bool
+    - os_update_reboot_required.stat.exists
+    - (ansible_connection | default('ssh')) != 'local'
+
+- name: Post-check | Report a pending reboot that was not performed
+  ansible.builtin.debug:
+    msg: >-
+      Обновление требует перезагрузки хоста, но она не выполнена
+      ({{ 'os_update_reboot=false' if not (os_update_reboot | bool)
+         else 'ansible работает с локальным подключением — ребут прервал бы деплой' }}).
+      Перезагрузите сервер вручную в согласованное окно; до этого момента
+      работает прежнее ядро.
+  when:
+    - os_update_reboot_required.stat.exists
+    - not (os_update_reboot | bool) or (ansible_connection | default('ssh')) == 'local'
