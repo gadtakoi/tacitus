@@ -344,6 +344,33 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost/api/streams | jq
 - [ ] Запрос несуществующего пути `/api/streams/nope` → `404`
 - [ ] Более 60 запросов в минуту → `429`
 
+### 6.1 Симуляция публикации
+
+Без источника все проверки выше видят пустой список. Имитатор публикует
+синтетический поток; настоящая камера не нужна. Подробности — в
+`docs/testing.md`.
+
+```bash
+scripts/simulate-stream.sh start --paths cam1,live
+scripts/simulate-stream.sh status
+```
+
+- [ ] `start` завершился с кодом 0 (значит, MediaMTX сообщил `ready`)
+- [ ] `status` показывает `true` в колонке READY и `2` дорожки по обоим путям
+- [ ] Принятые байты растут между двумя замерами
+- [ ] `curl -s -H "Authorization: Bearer $TOKEN" http://localhost/api/streams | jq`
+      теперь содержит `cam1` и `live`
+- [ ] В `recordings/cam1/` появились файлы `.mp4`
+      (если нет — см. «Если записи не появляются» в `docs/testing.md`)
+- [ ] `scripts/simulate-stream.sh negative` → код 0: MediaMTX отказал при
+      неверном пароле, необъявленном пути и публикации от имени `reader`
+- [ ] `scripts/simulate-stream.sh stop` удаляет только контейнер имитатора,
+      остальной стек продолжает работать
+- [ ] `docker compose ps` **без** `--profile` не показывает
+      `tacitus-stream-simulator`
+
+Полностью автоматически то же самое проверяет `## 13`.
+
 ## 7. React frontend (браузер)
 
 - [ ] Открыть `http://localhost/` в браузере.
@@ -567,3 +594,26 @@ docker compose down -v
 ---
 
 **Результат:** если все пункты отмечены — стек работоспособен end-to-end.
+
+## 13. Автоматическая E2E-проверка потока
+
+Всё из §6.1 одним скриптом, с отчётом и кодом выхода.
+
+```bash
+scripts/e2e-stream-check.sh
+```
+
+- [ ] Итоговая строка показывает `FAIL: 0`
+- [ ] Код выхода 0
+- [ ] После завершения `docker compose ps` не содержит
+      `tacitus-stream-simulator` (скрипт убирает имитатор через `trap EXIT`)
+
+Код выхода 2 означает, что проверку **не удалось выполнить** (стек не поднят,
+нет `curl`, не задан `TACITUS_SIM_PUBLISH_PASSWORD`), а не что всё хорошо.
+
+Проверка архивации выполняется отдельно и только в dev — она безвозвратно
+переносит локальные записи в S3:
+
+```bash
+scripts/e2e-stream-check.sh --with-archive
+```

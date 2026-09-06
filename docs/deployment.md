@@ -726,6 +726,15 @@ ssh root@1.2.3.4 "cd /opt/tacitus && bash scripts/healthcheck.sh"
 
 ## Переменные окружения (production)
 
+> **`TACITUS_SIM_*` — только для разработки.** Это настройки имитатора потока
+> (фальш-камеры). Профиль compose `simulator` на сервере не включается
+> никогда: контейнер держит действующие учётные данные публикатора и наполняет
+> `recordings/` синтетическим видео. Ansible вызывает `docker compose up -d`
+> без `--profile`, а в отрендеренном `.env` пароля публикатора нет — это два
+> независимых барьера. `scripts/healthcheck.sh` сообщает FAIL, если контейнер
+> `tacitus-stream-simulator` всё же найден на сервере.
+
+
 Все dev defaults в `app/core/config.py` должны быть переопределены:
 
 ```bash

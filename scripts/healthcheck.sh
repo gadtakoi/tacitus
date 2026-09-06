@@ -401,6 +401,16 @@ if [ "$docker_ready" = true ]; then
             bad "$name: завершился с кодом ${exit_code:-?} — смотрите docker logs $name"
         fi
     done
+
+    # Имитатор потока — сервис под профилем compose `simulator`, на сервере его
+    # быть не должно: он держит действующие учётные данные публикатора и
+    # наполняет recordings синтетическим видео. Наличие контейнера означает,
+    # что профиль включили в production вручную.
+    if [ -n "$(d ps -aq -f name=tacitus-stream-simulator 2>/dev/null)" ]; then
+        bad "tacitus-stream-simulator существует на сервере — профиль simulator включён в production"
+    else
+        ok "имитатор потока не развёрнут (профиль simulator выключен)"
+    fi
 else
     warn "проверка контейнеров пропущена: docker недоступен"
 fi

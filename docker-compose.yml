@@ -222,6 +222,80 @@ services:
           cpus: '0.1'
           memory: 64M
 
+  stream-simulator:
+    # Фальш-камера: публикует синтетический RTSP-поток в MediaMTX, чтобы
+    # прогнать конвейер (публикация → путь MediaMTX → GET /streams → запись на
+    # диск → архив в S3) без настоящего оборудования.
+    #
+    # `profiles` — первый профиль в этом файле. Обычный `docker compose up`
+    # сервис НЕ поднимает: ни локально, ни в production (ansible вызывает
+    # `docker compose up -d --build` без --profile, а в отрендеренном .env нет
+    # пароля публикатора — это два независимых барьера). Штатный запуск —
+    # scripts/simulate-stream.sh.
+    profiles:
+      - simulator
+    # Тот же образ, что у сервиса mediamtx: в нём уже есть ffmpeg 6.1.2 с
+    # libx264 и lavfi, поэтому симулятор не добавляет к стеку ни одного нового
+    # образа, ни одной новой версии для сопровождения и ни одной новой записи
+    # в цепочке поставок. Entrypoint образа (/mediamtx) переопределён — иначе
+    # контейнер поднял бы второй RTSP-сервер вместо публикатора.
+    image: bluenviron/mediamtx:1.15.1-ffmpeg
+    container_name: tacitus-stream-simulator
+    entrypoint: ["/bin/sh", "/simulate-stream-entrypoint.sh"]
+    # Не `unless-stopped`: упавший симулятор должен остаться упавшим и
+    # заметным, а не воскресать после перезагрузки хоста вместе со стеком.
+    restart: "no"
+    read_only: true
+    user: "1000:1000"
+    # env_file здесь намеренно НЕТ. Остальные сервисы читают .env целиком;
+    # публикатору незачем видеть TACITUS_JWT_SECRET, пароль БД и ключи S3 —
+    # ему нужен ровно один секрет, пароль учётной записи publisher.
+    environment:
+      - TACITUS_SIM_MODE=${TACITUS_SIM_MODE:-continuous}
+      - TACITUS_SIM_PATHS=${TACITUS_SIM_PATHS:-cam1}
+      - TACITUS_SIM_MTX_HOST=${TACITUS_SIM_MTX_HOST:-mediamtx}
+      - TACITUS_SIM_MTX_PORT=${TACITUS_MTX_RTSP_PORT:-8554}
+      - TACITUS_SIM_PUBLISH_USER=${TACITUS_SIM_PUBLISH_USER:-publisher}
+      - TACITUS_SIM_PUBLISH_PASSWORD=${TACITUS_SIM_PUBLISH_PASSWORD:-}
+      - TACITUS_SIM_READ_USER=${TACITUS_SIM_READ_USER:-reader}
+      - TACITUS_SIM_READ_PASSWORD=${TACITUS_SIM_READ_PASSWORD:-}
+      - TACITUS_SIM_SIZE=${TACITUS_SIM_SIZE:-1280x720}
+      - TACITUS_SIM_FPS=${TACITUS_SIM_FPS:-25}
+      - TACITUS_SIM_BITRATE=${TACITUS_SIM_BITRATE:-1500k}
+      - TACITUS_SIM_GOP_SECONDS=${TACITUS_SIM_GOP_SECONDS:-1}
+      - TACITUS_SIM_AUDIO=${TACITUS_SIM_AUDIO:-true}
+      - TACITUS_SIM_UP_SECONDS=${TACITUS_SIM_UP_SECONDS:-30}
+      - TACITUS_SIM_DOWN_SECONDS=${TACITUS_SIM_DOWN_SECONDS:-10}
+      - TACITUS_SIM_CYCLES=${TACITUS_SIM_CYCLES:-0}
+      - TACITUS_SIM_NEGATIVE_PATH=${TACITUS_SIM_NEGATIVE_PATH:-no-such-stream}
+    volumes:
+      # Скрипт монтируется ro — как scripts/mediamtx-archive-manager.py в
+      # mediamtx-cleanup. Каталог ./recordings НЕ монтируется: публикатор
+      # пишет в сеть, а не на диск, и не должен иметь доступа к архиву.
+      - ./scripts/simulate-stream-entrypoint.sh:/simulate-stream-entrypoint.sh:ro
+    tmpfs:
+      # Корень смонтирован ro, а негативному сценарию нужно место под stderr
+      # ffmpeg. Единственный писуемый каталог — и тот в памяти.
+      - /tmp
+    depends_on:
+      mediamtx:
+        condition: service_healthy
+    networks:
+      - tacitus-network
+    cap_drop:
+      - ALL
+    # Healthcheck не объявлен: образ своего не несёт, а «жив ли симулятор» —
+    # это вопрос к Control API MediaMTX (готов ли путь), а не к контейнеру.
+    # `docker ps` показывал бы healthy у ffmpeg, пишущего в никуда.
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
   postgres:
     # Точный патч-тег, а не `18-alpine`: плавающий тег молча подменял версию
     # СУБД при `docker compose pull`, то есть окружение переставало быть
