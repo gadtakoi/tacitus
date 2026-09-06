@@ -136,8 +136,15 @@ async def test_get_presigned_url_file_not_found(
 ) -> None:
     from botocore.exceptions import ClientError
 
-    error_response = {"Error": {"Code": "404", "Message": "Not Found"}}
-    mock_client.return_value.head_object.side_effect = ClientError(error_response, "HeadObject")
+    # Литерал передаётся прямо в вызов, а не через переменную: botocore-stubs
+    # объявляют первый аргумент как TypedDict, а отдельная переменная выводится
+    # как `dict[str, dict[str, str]]` и к нему уже не приводится. Инлайн
+    # оставляет структуру ответа под проверкой mypy — приведение типом `Any`
+    # молча пропустило бы и опечатку в имени ключа.
+    mock_client.return_value.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "Not Found"}},
+        "HeadObject",
+    )
 
     from app.services.s3_service import S3FileNotFoundError
 
