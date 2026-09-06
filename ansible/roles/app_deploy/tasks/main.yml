@@ -78,13 +78,18 @@
       - "--exclude=.DS_Store"
   notify: Restart Tacitus
 
+# mode: preserve, а не фиксированные 0644: в scripts/ лежат исполняемые файлы
+# (init.sh, healthcheck.sh, deploy*.sh), и жёсткий 0644 снимал с них бит x —
+# на сервере они падали с "Permission denied", хотя в git имеют режим 100755.
+# Источник здесь — распакованный `git archive HEAD`, то есть режимы приходят
+# ровно те, что записаны в репозитории.
 - name: Copy scripts
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../scripts/"
     dest: "{{ tacitus_deploy_dir }}/scripts/"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: "0644"
+    mode: preserve
   notify: Restart Tacitus
 
 - name: Render environment file
