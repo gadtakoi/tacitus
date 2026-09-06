@@ -6,4 +6,4 @@
 - [Frontend](frontend.md) — React, Vite, TypeScript, API клиент
 - [Инфраструктура](infrastructure.md) — Docker Compose, Nginx, MinIO, MediaMTX, ротация архивов
 - [Тестирование](testing.md) — pytest, ruff, pre-commit, покрытие
-- [Деплой](deployment.md) — Ansible, env vars, роль MediaMTX, обновление пакетов ОС, проверка состояния сервера
+- [Деплой](deployment.md) — Ansible, env vars, инициализация проекта (первый пользователь), роль MediaMTX, обновление пакетов ОС, проверка состояния сервера

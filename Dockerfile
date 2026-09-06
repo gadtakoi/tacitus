@@ -51,6 +51,15 @@ COPY app/ ./app/
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
 
+# Project initialization (scripts/init.sh runs it as
+# `docker compose exec app python scripts/init_project.py`). Baked in for the
+# same reason as the migration tree: bind-mounting a single file from the host
+# silently turns into an empty directory when the path is missing, and the
+# whole point of this script is to be runnable on a freshly deployed server
+# where only the image is guaranteed to exist. Copied file by file — the rest
+# of scripts/ is operator tooling for the host, not for the container.
+COPY scripts/init_project.py ./scripts/init_project.py
+
 RUN chown -R tacitus:tacitus ${APP_HOME}
 
 USER tacitus

@@ -697,7 +697,7 @@ async def register_user(
     session: AsyncSession,
     username: str,
     password: str,
-    client_ip: str,
+    client_ip: str | None = None,
 ) -> dict[str, str]:
     """Register a new user.
 
@@ -705,7 +705,12 @@ async def register_user(
         session: Database session.
         username: Unique username.
         password: Plain text password.
-        client_ip: Client IP address.
+        client_ip: Client IP address, or ``None`` when the account is created
+            outside an HTTP request — the project initialization script
+            (``scripts/init_project.py``) has no client to attribute it to.
+            The ``auth.register`` security event is then recorded without an
+            ``ip`` field rather than with a made-up one, so the audit log
+            never claims an address that was never observed.
 
     Returns:
         User data dict with username.

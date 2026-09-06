@@ -138,6 +138,16 @@ Nginx добавляет следующие security headers ко всем от�
 чтобы неудачную попытку всегда можно было записать в `failed_login_attempts`,
 но не отсекать учётные записи, созданные до введения правил.
 
+**Создание пользователя вне HTTP.** Скрипт инициализации
+`scripts/init_project.py` (см. [Деплой](deployment.md#инициализация-проекта-первый-пользователь))
+проверяет учётные данные той же схемой `RegisterRequest` и создаёт запись тем
+же сервисом `register_user`, поэтому обойти политику паролей «через CLI»
+нельзя, а хеш совпадает с тем, что ожидает `POST /auth/login`. Пароль не
+принимается аргументом командной строки: `argv` виден в `ps` и попадает в
+историю оболочки. Сгенерированный пароль печатается один раз; введённый
+оператором не выводится никогда — в том числе в сообщениях об ошибках
+валидации, откуда `input_value` вырезан осознанно.
+
 ### 2.4 Token Management
 
 - Access token: TTL **15 минут**, содержит уникальный `jti` для отзыва.
@@ -417,7 +427,7 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 |-------------------------------|----------|---------------------------|
 | `auth.login.success`          | info     | ip, user                  |
 | `auth.login.failed`           | warning  | ip, user                  |
-| `auth.register`               | info     | ip, user                  |
+| `auth.register`               | info     | ip, user (без `ip` при создании через `scripts/init_project.py`) |
 | `auth.refresh.success`        | info     | ip, user                  |
 | `auth.refresh.reuse_detected` | warning  | user                      |
 | `auth.token.revoked`          | info     | ip, user, refresh_revoked |

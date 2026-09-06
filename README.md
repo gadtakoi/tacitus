@@ -34,8 +34,15 @@ pre-commit install
 # 4. Запустить стек
 docker compose up -d
 
-# 5. Открыть http://localhost
+# 5. Создать пользователя для входа (идемпотентно, пароль будет показан один раз)
+scripts/init.sh --username admin --generate
+
+# 6. Открыть http://localhost
 ```
+
+Схему БД создаёт сервис `db-migrations`, bucket в MinIO — `minio-init`, а
+учётную запись для входа — `scripts/init.sh`: без неё логиниться не под кем.
+Подробнее: [Инициализация проекта](docs/deployment.md#инициализация-проекта-первый-пользователь).
 
 ## API
 
@@ -76,7 +83,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 - [Тестирование](docs/testing.md)
 - [Аудит зависимостей](docs/audit.md)
 - [Ручная E2E-проверка](docs/E2E_CHECKLIST.md)
-- [Деплой](docs/deployment.md) — в том числе [проверка состояния сервера](docs/deployment.md#проверка-состояния-сервера)
+- [Деплой](docs/deployment.md) — в том числе [инициализация проекта](docs/deployment.md#инициализация-проекта-первый-пользователь) и [проверка состояния сервера](docs/deployment.md#проверка-состояния-сервера)
 
 ## Переменные окружения
 
