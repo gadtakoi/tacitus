@@ -17,7 +17,7 @@
 
 set -uo pipefail
 
-readonly SELF="${BASH_SOURCE[0]}"
+readonly SELF="${BASH_SOURCE[0]:-}"
 readonly DEFAULT_DEPLOY_DIR="/opt/tacitus"
 readonly SECRETS_FILE="/etc/tacitus/deploy-secrets.yml"
 
@@ -98,6 +98,7 @@ done
 
 if [ -n "$host" ]; then
     command -v ssh >/dev/null || die "нужен ssh"
+    [ -n "$SELF" ] || die "скрипт передан через stdin — для удалённого режима запустите его как файл"
     [ -r "$SELF" ] || die "не удалось прочитать сам скрипт ($SELF) для передачи на сервер"
 
     remote_args=(--dir "$deploy_dir")
