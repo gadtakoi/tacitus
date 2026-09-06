@@ -92,7 +92,8 @@ services:
       - S3_BUCKET=${S3_BUCKET:-tacitus-files}
     entrypoint: >
       sh -c "
-      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      do i=$$((i+1)); [ $$i -ge 30 ] && exit 1; echo 'minio недоступен, повтор через 2с'; sleep 2; done;
       mc mb local/$${S3_BUCKET} --ignore-existing
       "
     networks:
