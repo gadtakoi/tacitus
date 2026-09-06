@@ -9,7 +9,7 @@ Tacitus — fullstack-приложение для управления файл�
 
 - **Backend:** Python 3.14, FastAPI, Uvicorn, SQLAlchemy 2.0, asyncpg, Alembic
 - **Frontend:** React 19, TypeScript, Vite
-- **Database:** PostgreSQL 15+
+- **Database:** PostgreSQL 18 (образ `postgres:18.6-alpine`)
 - **Storage:** MinIO (S3-compatible)
 - **Media:** MediaMTX (RTSP-сервер с записью потоков)
 - **Proxy:** Nginx
