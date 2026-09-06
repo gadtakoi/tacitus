@@ -278,9 +278,6 @@ services:
     networks:
       - tacitus-network
     working_dir: /app
-    volumes:
-      - ./alembic.ini:/app/alembic.ini:ro
-      - ./migrations:/app/migrations:ro
     command: >
       sh -c "python -m alembic -c /app/alembic.ini upgrade head"
 

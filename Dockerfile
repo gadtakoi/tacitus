@@ -44,6 +44,13 @@ COPY --from=builder /usr/local/bin/alembic /usr/local/bin/alembic
 # left in an otherwise fully pinned image.
 COPY app/ ./app/
 
+# The db-migrations service runs alembic from this same image. Baking the
+# migration tree in keeps it self-contained: bind-mounting it from the host
+# fails silently when the path is missing: Docker creates an empty directory
+# and alembic dies with "Can't find Python file /app/migrations/env.py".
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
+
 RUN chown -R tacitus:tacitus ${APP_HOME}
 
 USER tacitus
