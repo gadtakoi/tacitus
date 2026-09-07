@@ -103,6 +103,7 @@
     review-checklist.md
     secrets-rules.md
     testing-rules.md
+    tor-rules.md
   modules/
     banking.md
     boto-yandex-cloud.md
@@ -141,7 +142,8 @@
 - `prompt-templates.md` — готовые шаблоны prompt-ов;
 - `review-checklist.md` — короткий чек-лист проверки результата;
 - `secrets-rules.md` — правила обращения с секретами;
-- `testing-rules.md` — требования к тестам и проверке.
+- `testing-rules.md` — требования к тестам и проверке;
+- `tor-rules.md` — правила актуализации технического задания `docs/ToR_<Project>_v1.0.md`.
 
 ### `modules/`
 
