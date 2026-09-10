@@ -21,6 +21,7 @@ app/
 │   └── routers/
 │       ├── auth.py          # /auth/* endpoints
 │       ├── files.py         # /files/* endpoints
+│       ├── recordings.py    # /recordings/* endpoints (архив записей в S3)
 │       └── streams.py       # /streams/* endpoints (MediaMTX monitoring)
 ├── core/
 │   ├── config.py            # Pydantic-settings (env vars)
@@ -41,6 +42,7 @@ app/
 ├── schemas/
 │   ├── auth.py              # RegisterRequest, LoginRequest, TokenResponse
 │   ├── files.py             # FileUploadResponse, FileListResponse, ...
+│   ├── recordings.py        # RecordingItem, RecordingListResponse, ...
 │   ├── stats.py             # FileStat, S3StatsResponse
 │   └── streams.py           # StreamItem, StreamsListResponse, StreamConfig
 └── services/
@@ -102,6 +104,87 @@ Flow:
 - Presigned URL не требует от клиента отдельных S3 credentials — он подписан
   ключами приложения.
 - Если объект не найден в bucket, API возвращает `404 Not Found`.
+
+Выдача `GET /files/` перечисляет объекты bucket'а как есть, включая ключи
+архива записей. Скачать их через `/files/{filename}` нельзя: путь-параметр без
+`:path` не совпадает с ключами, содержащими `/`, а `sanitize_filename` сводит
+имя к basename. Для архива есть отдельный ресурс — см. ниже.
+
+## Записи
+
+Архивные сегменты (`recording` → `archive` в терминах [CONTEXT.md](../CONTEXT.md))
+складывает в объектное хранилище `scripts/mediamtx-archive-manager.py`. Ключ
+повторяет структуру каталога записей:
+
+```
+mediamtx-archives/cam1/2026-09-10_12-00-00-000000.mp4
+└── префикс ──┘└ поток ┘└──── начало сегмента ─────┘
+```
+
+Bucket у архива и у пользовательских файлов общий, поэтому **префикс —
+единственная граница между ними**. Он задаётся переменной
+`TACITUS_S3_ARCHIVE_PREFIX` (по умолчанию `mediamtx-archives/`) и должен
+совпадать с `S3_PREFIX` сервиса `mediamtx-cleanup` в `docker-compose.yml`.
+Значение нормализуется при старте: ведущий `/` и `..` запрещены, завершающий
+`/` дописывается — без него ключ `mediamtx-archives-old/secret.mp4` прошёл бы
+проверку `startswith`, предназначенную для `mediamtx-archives/`.
+
+| Endpoint             | Метод  | Auth   | Лимит  | Описание                                    |
+|----------------------|--------|--------|--------|---------------------------------------------|
+| `/recordings`        | GET    | Bearer | 60/мин | Страница архива; фильтр `stream`, пагинация |
+| `/recordings/{key}`  | GET    | Bearer | 30/мин | Presigned URL сегмента (400, 404)           |
+| `/recordings/{key}`  | DELETE | Bearer | 10/мин | Удаление сегмента (400)                     |
+
+### Пагинация
+
+`GET /recordings` возвращает одну страницу и курсор:
+
+```json
+{
+  "items": [
+    {
+      "key": "mediamtx-archives/cam1/2026-09-10_12-00-00-000000.mp4",
+      "stream": "cam1",
+      "size_bytes": 154238976,
+      "last_modified": "2026-09-10T12:59:59Z"
+    }
+  ],
+  "next_cursor": "1PxJ8...="
+}
+```
+
+`next_cursor` — это continuation token S3: непрозрачная строка, которую клиент
+возвращает как `?cursor=`. `null` означает последнюю страницу. Размер страницы
+задаётся `?limit=` (1–1000, по умолчанию 100) — верхняя граница совпадает с
+`MaxKeys` самого S3.
+
+Сплошной обход, как в `GET /files/`, здесь неприменим: архив растёт на сегмент
+в час на каждый поток, и время ответа стало бы функцией от того, как давно
+сервис пишет записи.
+
+Фильтр `?stream=cam1` не отсеивает результат в Python, а сужает префикс
+запроса к S3 до `mediamtx-archives/cam1/`. Имя потока проверяется тем же
+валидатором, что и в остальном API (`StreamName`), до подстановки в префикс.
+
+### Ключ как параметр пути
+
+`{key:path}` принимает слэши, поэтому проверка ключа отличается от проверки
+имени файла и вынесена в `sanitize_object_key()`:
+
+1. запрет null-байтов, нормализация `\` → `/`, ограничение длины 1024 байта
+   (лимит S3);
+2. посегментная проверка: пустые сегменты, `.` и `..`, скрытые файлы и символы
+   вне `[a-zA-Z0-9._-]` отклоняются — `basename` здесь не спасает, потому что
+   структура каталогов должна сохраниться;
+3. и только потом — обязательный префикс архива.
+
+Порядок важен: попытка обхода получает ответ «path traversal», а не «выход за
+префикс», и в журнале видно, что именно пробовали сделать. Любой отказ — это
+`400`, а не `500`.
+
+> Percent-encoding снимается до маршрутизации, поэтому `%2e%2e%2f` доезжает до
+> валидатора уже как `../`. Литеральные `../` до приложения обычно не доходят
+> вовсе: их схлопывают клиенты и прокси.
 
 ## Rate limiting
 
@@ -470,6 +553,7 @@ pip install -e ".[dev]"
 | `S3_SECRET_KEY`                | `minioadmin`                       | S3 secret key                                            |
 | `S3_BUCKET`                    | `tacitus-files`                    | Bucket для файлов                                        |
 | `PRESIGNED_URL_EXPIRATION`     | `300`                              | Время жизни presigned URL для скачивания (секунды)       |
+| `S3_ARCHIVE_PREFIX`            | `mediamtx-archives/`               | Префикс ключей архива записей — граница между архивом и файлами |
 | `MTX_API_URL`                  | `http://mediamtx:9997/v3`          | URL Control API MediaMTX                                 |
 | `LOG_*`                        | см. раздел «Логирование»           | Настройки логирования                                    |
 | `SENTRY_*`                     | см. раздел «Sentry»                | Настройки Sentry                                         |

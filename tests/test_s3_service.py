@@ -5,11 +5,18 @@ pool), so these tests drive the service through ``anyio`` and assert on the
 same mocked boto3 client.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
-from app.services.s3_service import S3Service, sanitize_filename
+from app.services.s3_service import (
+    S3InvalidCursorError,
+    S3Service,
+    sanitize_filename,
+    sanitize_object_key,
+)
 
 
 @pytest.fixture
@@ -232,3 +239,122 @@ def test_sanitize_filename_invalid_chars() -> None:
         sanitize_filename("file name.txt")
     with pytest.raises(ValueError, match="invalid characters"):
         sanitize_filename("file:name.txt")
+
+
+class TestSanitizeObjectKey:
+    """Unit tests for the archive key boundary.
+
+    ``sanitize_object_key`` is the only thing separating the archive from the
+    user files sharing the bucket, so its negative cases are tested here as
+    well as through the router.
+    """
+
+    PREFIX = "mediamtx-archives/"
+
+    def test_valid_archive_key(self) -> None:
+        key = f"{self.PREFIX}cam1/2026-09-10_12-00-00-000000.mp4"
+        assert sanitize_object_key(key, self.PREFIX) == key
+
+    def test_backslashes_are_normalized(self) -> None:
+        key = rf"{self.PREFIX}cam1\segment.mp4"
+        assert sanitize_object_key(key, self.PREFIX) == f"{self.PREFIX}cam1/segment.mp4"
+
+    def test_parent_segment_is_traversal(self) -> None:
+        with pytest.raises(ValueError, match="Path traversal"):
+            sanitize_object_key(f"{self.PREFIX}../secret.png", self.PREFIX)
+
+    def test_current_segment_is_traversal(self) -> None:
+        with pytest.raises(ValueError, match="Path traversal"):
+            sanitize_object_key(f"{self.PREFIX}./secret.png", self.PREFIX)
+
+    def test_absolute_key_is_traversal(self) -> None:
+        with pytest.raises(ValueError, match="Path traversal"):
+            sanitize_object_key("/etc/passwd", self.PREFIX)
+
+    def test_sibling_prefix_is_rejected(self) -> None:
+        # The trailing slash in the prefix is what makes this fail; without it
+        # the check would be a plain string prefix match and would pass.
+        with pytest.raises(ValueError, match="outside the allowed prefix"):
+            sanitize_object_key("mediamtx-archives-old/secret.png", self.PREFIX)
+
+    def test_key_without_prefix_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="outside the allowed prefix"):
+            sanitize_object_key("uploaded-by-a-user.png", self.PREFIX)
+
+    def test_empty_segment_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="empty path segment"):
+            sanitize_object_key(f"{self.PREFIX}cam1//segment.mp4", self.PREFIX)
+
+    def test_hidden_segment_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Hidden files"):
+            sanitize_object_key(f"{self.PREFIX}.hidden/segment.mp4", self.PREFIX)
+
+    def test_null_byte_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="null bytes"):
+            sanitize_object_key(f"{self.PREFIX}cam1/seg\x00.mp4", self.PREFIX)
+
+    def test_invalid_characters_are_rejected(self) -> None:
+        with pytest.raises(ValueError, match="invalid characters"):
+            sanitize_object_key(f"{self.PREFIX}cam1/seg ment.mp4", self.PREFIX)
+
+    def test_too_long_key_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="too long"):
+            sanitize_object_key(self.PREFIX + "a" * 1024, self.PREFIX)
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_list_objects_single_page(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """A non-truncated response ends the pagination."""
+    modified = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [{"Key": "mediamtx-archives/cam1/a.mp4", "Size": 10, "LastModified": modified}],
+        "IsTruncated": False,
+        "NextContinuationToken": "ignored-when-not-truncated",
+    }
+
+    items, cursor = await s3_service.list_objects("mediamtx-archives/", limit=10)
+
+    assert cursor is None
+    assert items == [
+        {
+            "key": "mediamtx-archives/cam1/a.mp4",
+            "size_bytes": 10,
+            "last_modified": modified,
+        }
+    ]
+    kwargs = mock_client.return_value.list_objects_v2.call_args.kwargs
+    assert kwargs["Prefix"] == "mediamtx-archives/"
+    assert kwargs["MaxKeys"] == 10
+    assert "ContinuationToken" not in kwargs
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_list_objects_truncated(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """A truncated response hands the continuation token back to the caller."""
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [],
+        "IsTruncated": True,
+        "NextContinuationToken": "page-2",
+    }
+
+    _, cursor = await s3_service.list_objects("mediamtx-archives/", limit=1, cursor="page-1")
+
+    assert cursor == "page-2"
+    assert (
+        mock_client.return_value.list_objects_v2.call_args.kwargs["ContinuationToken"] == "page-1"
+    )
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_list_objects_invalid_cursor(mock_client: MagicMock, s3_service: S3Service) -> None:
+    """A cursor S3 refuses becomes a dedicated error, not a generic failure."""
+    mock_client.return_value.list_objects_v2.side_effect = ClientError(
+        {"Error": {"Code": "InvalidArgument", "Message": "invalid token"}},
+        "ListObjectsV2",
+    )
+
+    with pytest.raises(S3InvalidCursorError):
+        await s3_service.list_objects("mediamtx-archives/", cursor="broken")

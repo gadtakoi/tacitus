@@ -1,6 +1,6 @@
 """Application configuration."""
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,17 @@ class Settings(BaseSettings):
         le=86400,
         description="Lifetime of presigned S3/MinIO download URLs in seconds. "
         "Short-lived URLs reduce exposure if a link is leaked.",
+    )
+    # Key prefix under which ``scripts/mediamtx-archive-manager.py`` stores
+    # archived recordings. Recordings share the bucket with user files, so this
+    # prefix is the only boundary between them: ``/recordings`` refuses to touch
+    # anything outside it, and ``/files`` hides everything inside it. Must match
+    # ``S3_PREFIX`` of the ``mediamtx-cleanup`` service in docker-compose.yml.
+    s3_archive_prefix: str = Field(
+        default="mediamtx-archives/",
+        min_length=1,
+        max_length=256,
+        description="Key prefix of archived recordings inside the S3 bucket.",
     )
 
     jwt_secret: str = Field(default="dev-jwt-secret-change-me")
@@ -73,6 +84,40 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 0.1
+
+    @field_validator("s3_archive_prefix")
+    @classmethod
+    def _normalize_archive_prefix(cls, value: str) -> str:
+        """Bring the archive prefix to the one shape the rest of the code assumes.
+
+        The prefix is a security boundary, and every check against it is a
+        ``startswith``. Without a trailing slash the key
+        ``mediamtx-archives-old/secret.mp4`` would pass a check meant for
+        ``mediamtx-archives/``; with a leading slash the prefix would never
+        match the keys the archive manager actually writes.
+
+        Args:
+            value: Raw prefix from the environment.
+
+        Returns:
+            The prefix with a trailing slash and no leading slash.
+
+        Raises:
+            ValueError: If the prefix is absolute, empty or contains ``..``.
+        """
+        normalized = value.strip().replace("\\", "/")
+        if not normalized:
+            msg = "Archive prefix must not be empty"
+            raise ValueError(msg)
+        if normalized.startswith("/"):
+            msg = "Archive prefix must not start with '/'"
+            raise ValueError(msg)
+        if ".." in normalized.split("/"):
+            msg = "Archive prefix must not contain '..'"
+            raise ValueError(msg)
+        if not normalized.endswith("/"):
+            normalized += "/"
+        return normalized
 
 
 settings = Settings()

@@ -47,6 +47,9 @@ Nginx добавляет следующие security headers ко всем от�
 | `GET /files/stats`       | 10/мин | пользователь |
 | `GET /files/{filename}`  | 30/мин | пользователь |
 | `DELETE /files/{filename}` | 10/мин | пользователь |
+| `GET /recordings`        | 60/мин | пользователь |
+| `GET /recordings/{key}`  | 30/мин | пользователь |
+| `DELETE /recordings/{key}` | 10/мин | пользователь |
 | `GET /streams`           | 60/мин | пользователь |
 | `GET /streams/{path}`    | 60/мин | пользователь |
 | `GET /settings`          | 30/мин | пользователь |
@@ -219,6 +222,43 @@ Production-рекомендации:
 - Bucket policy должна **запрещать публичный доступ** ко всем объектам.
 - MinIO Console (порт 9001) **не должен быть exposed наружу**.
 - Значение `TACITUS_PRESIGNED_URL_EXPIRATION` должно быть минимально достаточным для скачивания файла клиентом.
+
+#### Архив записей: та же модель, другая граница
+
+`GET /recordings/{key}` работает по этой же схеме — JWT на endpoint, presigned
+URL на объект, тот же TTL, — но принимает **ключ со слэшами**
+(`mediamtx-archives/cam1/2026-09-10_12-00-00-000000.mp4`), а не плоское имя
+файла. Санитизация имени здесь не подходит: `sanitize_filename` сводит вход к
+basename и вместе со структурой каталога уничтожает адрес объекта.
+
+Архив и пользовательские файлы лежат в **одном bucket**, поэтому единственное,
+что отделяет одно от другого, — префикс `TACITUS_S3_ARCHIVE_PREFIX`
+(по умолчанию `mediamtx-archives/`). Его проверяет `sanitize_object_key()`:
+
+| Проверка                                    | Отклоняет                                              |
+|---------------------------------------------|--------------------------------------------------------|
+| null-байты, длина ≤ 1024 байт               | `seg\x00.mp4`, ключи сверх лимита S3                   |
+| посегментный разбор после `\` → `/`         | `..`, `.`, пустые сегменты, `\`-варианты обхода        |
+| скрытые сегменты                            | `mediamtx-archives/.hidden/segment.mp4`                |
+| алфавит `[a-zA-Z0-9._-]` в каждом сегменте  | пробелы, `:`, `%`, всё нештатное                       |
+| обязательный префикс архива                 | `secret.png`, `mediamtx-archives-old/secret.png`       |
+
+Любой отказ — `400`, и ни один такой запрос не доходит до S3. Проверка префикса
+идёт **последней**: попытка обхода в журнале выглядит как обход, а не как
+промах мимо префикса.
+
+Завершающий `/` в префиксе обязателен и дописывается при старте
+(`Settings._normalize_archive_prefix`) — без него `startswith` пропустил бы
+соседний префикс `mediamtx-archives-old/`.
+
+> Percent-encoding снимается до маршрутизации, поэтому `%2e%2e%2f` приходит в
+> валидатор уже как `../`; литеральные `../` до приложения обычно не доходят —
+> их схлопывают клиенты и прокси. Тесты бьют по обеим формам
+> (`tests/test_recordings_router.py`).
+
+Удаление (`DELETE /recordings/{key}`) проходит через ту же проверку. Оно
+необратимо: переход «запись → архив» уже удалил локальную копию, и объект в
+S3/MinIO — единственный оставшийся экземпляр.
 
 ### 2.6 Startup Secret Validation
 
@@ -479,6 +519,8 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 | `file.upload`                 | info     | ip, user, file_name, size |
 | `file.download`               | info     | ip, user, file_name       |
 | `file.delete`                 | info     | ip, user, file_name       |
+| `recording.download`          | info     | ip, user, object_key      |
+| `recording.delete`            | info     | ip, user, object_key      |
 | `rate_limit.exceeded`         | warning  | ip, endpoint              |
 | `db.integrity_error`          | error    | ip, endpoint              |
 | `db.driver_error`             | error    | ip, endpoint              |

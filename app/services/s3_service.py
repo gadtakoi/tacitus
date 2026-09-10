@@ -4,6 +4,7 @@ import asyncio
 import logging
 import posixpath
 import re
+from datetime import datetime
 from typing import Any, TypedDict
 
 import boto3
@@ -20,6 +21,15 @@ class S3FileNotFoundError(Exception):
 
     This exception is converted to an HTTP 404 by the API layer so the service
     stays transport-agnostic.
+    """
+
+
+class S3InvalidCursorError(Exception):
+    """Raised when S3 rejects the pagination cursor supplied by the client.
+
+    Continuation tokens travel through the client, so a malformed or expired
+    one is a bad request, not a server fault. Without this distinction boto3's
+    ``InvalidArgument`` would surface as a 500.
     """
 
 
@@ -72,6 +82,78 @@ def sanitize_filename(filename: str) -> str:
     if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
         raise ValueError("Filename contains invalid characters")
     return filename
+
+
+# Maximum key length accepted by S3, in bytes.
+MAX_OBJECT_KEY_LENGTH = 1024
+
+# Characters allowed in a single path segment of an object key. Deliberately the
+# same alphabet ``sanitize_filename`` accepts: MediaMTX writes recordings as
+# ``<stream>/<YYYY-MM-DD_HH-MM-SS-ffffff>.mp4`` and nothing outside it.
+_KEY_SEGMENT_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def sanitize_object_key(key: str, allowed_prefix: str) -> str:
+    """Validate a multi-segment object key and confine it to one prefix.
+
+    Unlike :func:`sanitize_filename`, which flattens its input to a bare
+    basename, this function keeps the directory structure: archived recordings
+    live under keys such as ``mediamtx-archives/cam1/2026-09-10_12-00-00-0.mp4``
+    and cannot be addressed without slashes. Keeping the slashes means the
+    traversal checks have to be done per segment instead of being sidestepped by
+    ``basename``, and it means the prefix check is the only thing standing
+    between a caller and every other object in the shared bucket.
+
+    Args:
+        key: Raw object key received from a client. URL decoding has already
+            happened by the time a path parameter reaches this function, so
+            ``%2e%2e%2f`` arrives here as ``../``.
+        allowed_prefix: Prefix the key must start with, trailing slash included
+            (see ``Settings.s3_archive_prefix``, which guarantees that shape).
+
+    Returns:
+        The normalized key, safe to use as an S3 ``Key``.
+
+    Raises:
+        ValueError: If the key is empty, absolute, too long, contains traversal
+            segments or hidden files, uses characters outside the allowed
+            alphabet, or falls outside ``allowed_prefix``.
+    """
+    if "\x00" in key:
+        raise ValueError("Object key contains null bytes")
+    normalized = key.replace("\\", "/")
+    if not normalized:
+        raise ValueError("Object key is empty")
+    if normalized.startswith("/"):
+        raise ValueError("Path traversal detected")
+    if len(normalized.encode("utf-8")) > MAX_OBJECT_KEY_LENGTH:
+        raise ValueError("Object key too long")
+
+    for segment in normalized.split("/"):
+        if not segment:
+            raise ValueError("Object key contains an empty path segment")
+        if set(segment) == {"."}:
+            # Catches ``.`` and ``..`` — both of which the alphabet below would
+            # otherwise accept, since a dot is a legal filename character.
+            raise ValueError("Path traversal detected")
+        if segment.startswith("."):
+            raise ValueError("Hidden files are not allowed")
+        if not _KEY_SEGMENT_RE.match(segment):
+            raise ValueError("Object key contains invalid characters")
+
+    # Last, so that a traversal attempt is reported as traversal rather than as
+    # a prefix mismatch.
+    if not normalized.startswith(allowed_prefix):
+        raise ValueError("Object key is outside the allowed prefix")
+    return normalized
+
+
+class ObjectSummary(TypedDict):
+    """One object as returned by a paginated listing."""
+
+    key: str
+    size_bytes: int
+    last_modified: datetime
 
 
 class _LargestFileStat(TypedDict):
@@ -157,6 +239,74 @@ class S3Service:
                 logger.error("S3 returned truncated listing without continuation token")
                 break
         return objects
+
+    def _sync_list_objects_page(
+        self,
+        prefix: str,
+        limit: int,
+        cursor: str | None,
+    ) -> tuple[list[ObjectSummary], str | None]:
+        """Blocking part of the paginated listing: one ``list_objects_v2`` call."""
+        kwargs: dict[str, Any] = {"Bucket": self.bucket, "MaxKeys": limit}
+        if prefix:
+            kwargs["Prefix"] = prefix
+        if cursor:
+            kwargs["ContinuationToken"] = cursor
+        try:
+            response = self._get_client().list_objects_v2(**kwargs)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "InvalidArgument":
+                raise S3InvalidCursorError(cursor or "") from exc
+            raise
+
+        items: list[ObjectSummary] = [
+            ObjectSummary(
+                key=obj["Key"],
+                size_bytes=obj["Size"],
+                last_modified=obj["LastModified"],
+            )
+            for obj in response.get("Contents", [])
+        ]
+        # ``NextContinuationToken`` is only meaningful while the response is
+        # truncated; returning it unconditionally would make the caller ask for
+        # a page that does not exist.
+        next_cursor = response.get("NextContinuationToken") if response.get("IsTruncated") else None
+        return items, next_cursor
+
+    async def list_objects(
+        self,
+        prefix: str = "",
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> tuple[list[ObjectSummary], str | None]:
+        """Return a single page of objects, newest pagination state included.
+
+        Deliberately one page and not the whole bucket: the archive grows by a
+        segment per hour per stream, and a listing that walks every key would
+        make the response time a function of how long the service has been
+        recording.
+
+        Args:
+            prefix: Key prefix to list; empty string lists the whole bucket.
+            limit: Maximum number of keys in the page (S3 caps this at 1000).
+            cursor: Continuation token returned by a previous call.
+
+        Returns:
+            Tuple of ``(items, next_cursor)``; ``next_cursor`` is ``None`` on the
+            last page.
+
+        Raises:
+            S3InvalidCursorError: If S3 rejects ``cursor``.
+            ClientError: If S3 returns any other error.
+        """
+        try:
+            return await asyncio.to_thread(self._sync_list_objects_page, prefix, limit, cursor)
+        except S3InvalidCursorError:
+            logger.warning("S3 rejected the pagination cursor", extra={"prefix": prefix})
+            raise
+        except ClientError as e:
+            logger.error("Failed to list objects", extra={"prefix": prefix, "error": str(e)})
+            raise
 
     async def list_files(self) -> list[str]:
         """Return list of file names in bucket.
@@ -265,10 +415,33 @@ class S3Service:
             S3FileNotFoundError: If the object does not exist in the bucket.
             ClientError: If S3 returns an unexpected error.
         """
-        sanitized = sanitize_filename(filename)
+        return await self.get_presigned_url_for_key(sanitize_filename(filename), expiration)
+
+    async def get_presigned_url_for_key(self, key: str, expiration: int | None = None) -> str:
+        """Generate a presigned URL for an already-validated object key.
+
+        Same authentication model as :meth:`get_presigned_url`, with one
+        difference: this method performs **no** validation of its own. It exists
+        for keys that legitimately contain slashes (archived recordings), which
+        :func:`sanitize_filename` cannot express. The caller is responsible for
+        having run :func:`sanitize_object_key` — passing raw client input here
+        hands out signed URLs for arbitrary objects in the bucket.
+
+        Args:
+            key: Object key that has already passed :func:`sanitize_object_key`.
+            expiration: URL expiration time in seconds; ``None`` means
+                ``settings.presigned_url_expiration``.
+
+        Returns:
+            Presigned URL string.
+
+        Raises:
+            S3FileNotFoundError: If the object does not exist in the bucket.
+            ClientError: If S3 returns an unexpected error.
+        """
         if expiration is None:
             expiration = settings.presigned_url_expiration
-        return await asyncio.to_thread(self._sync_get_presigned_url, sanitized, expiration)
+        return await asyncio.to_thread(self._sync_get_presigned_url, key, expiration)
 
     def _sync_delete_file(self, sanitized: str) -> None:
         """Blocking part of the deletion: single ``delete_object`` call."""
@@ -280,15 +453,30 @@ class S3Service:
         Args:
             filename: Name of the file.
         """
-        sanitized = sanitize_filename(filename)
+        await self.delete_object(sanitize_filename(filename))
+
+    async def delete_object(self, key: str) -> None:
+        """Delete an object by an already-validated key.
+
+        Performs no validation of its own, for the same reason as
+        :meth:`get_presigned_url_for_key`: the caller must have run
+        :func:`sanitize_object_key` first. Deletion is irreversible — an
+        unvalidated key here removes arbitrary objects from the bucket.
+
+        Args:
+            key: Object key that has already passed validation.
+
+        Raises:
+            ClientError: If S3 returns an error.
+        """
         try:
-            await asyncio.to_thread(self._sync_delete_file, sanitized)
+            await asyncio.to_thread(self._sync_delete_file, key)
             logger.info(
-                "File deleted",
-                extra={"file_name": sanitized, "bucket": self.bucket},
+                "Object deleted",
+                extra={"file_name": key, "bucket": self.bucket},
             )
         except ClientError as e:
-            logger.error("Failed to delete file", extra={"file_name": sanitized, "error": str(e)})
+            logger.error("Failed to delete object", extra={"file_name": key, "error": str(e)})
             raise
 
     def _sync_get_bucket_stats(self) -> _BucketStats:

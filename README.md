@@ -64,6 +64,9 @@ scripts/init.sh --username admin --generate
 | `/files/stats`    | GET    | Bearer | Статистика bucket                               |
 | `/files/{name}`   | GET    | Bearer | Presigned URL                                   |
 | `/files/{name}`   | DELETE | Bearer | Удаление файла                                  |
+| `/recordings`       | GET    | Bearer | Архив записей: страница с курсором             |
+| `/recordings/{key}` | GET    | Bearer | Presigned URL архивного сегмента               |
+| `/recordings/{key}` | DELETE | Bearer | Удаление архивного сегмента                    |
 | `/streams`        | GET    | Bearer | Список RTSP-потоков                             |
 | `/streams/{path}` | GET    | Bearer | Информация о потоке                             |
 | `/settings`       | GET    | Bearer | Параметры окружения (секреты скрыты)            |
@@ -115,6 +118,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 | `TACITUS_S3_SECRET_KEY`               | `minioadmin`                                                 | MinIO secret key                                             |
 | `TACITUS_S3_BUCKET`                   | `tacitus-files`                                              | Bucket для файлов                                            |
 | `TACITUS_PRESIGNED_URL_EXPIRATION`    | `300`                                                        | TTL presigned URL, сек                                       |
+| `TACITUS_S3_ARCHIVE_PREFIX`           | `mediamtx-archives/`                                         | Префикс ключей архива записей в bucket                       |
 | `TACITUS_MTX_API_URL`                 | `http://mediamtx:9997/v3`                                    | URL Control API MediaMTX                                     |
 
 Переменные уровня `docker-compose.yml` — приложение их **не** читает, они конфигурируют соседние сервисы:

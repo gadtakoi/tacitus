@@ -1,6 +1,6 @@
 # План проекта Tacitus — доступ к архиву, учётные записи и эксплуатация
 
-> **Статус: не начат.** Создан 2026-09-10.
+> **Статус: выполняется.** Создан 2026-09-10; пункт A1 закрыт 2026-09-10 (ADR-018).
 >
 > План выполняется пошагово: этапы A → B, внутри этапа — по пунктам. Каждый пункт закрывается отдельным коммитом, в
 > котором вместе с кодом обновляются тесты, документация и ТЗ (`docs/ToR_Tacitus_v1.0.md`, навык `tor-sync`).
@@ -70,36 +70,36 @@
 **Решение.** Отдельный ресурс `/recordings` поверх того же бакета, с ключом-путём и жёстко ограниченным префиксом.
 `/files/*` не трогаем — у него другой контракт (санитизация имени, белый список типов и расширений).
 
-- [ ] Добавить настройку `s3_archive_prefix: str = "mediamtx-archives/"` в `app/core/config.py` с docstring и внести её
+- [x] Добавить настройку `s3_archive_prefix: str = "mediamtx-archives/"` в `app/core/config.py` с docstring и внести её
   в `_FIELD_GROUPS` (`app/services/settings_service.py`) — иначе она попадёт в группу «Прочее».
-- [ ] Добавить в `app/services/s3_service.py`:
-    - [ ] `sanitize_object_key(key: str, allowed_prefix: str) -> str` — отдельно от `sanitize_filename`: нормализация
+- [x] Добавить в `app/services/s3_service.py`:
+    - [x] `sanitize_object_key(key: str, allowed_prefix: str) -> str` — отдельно от `sanitize_filename`: нормализация
       `\` → `/`, запрет `\x00`, `..`, ведущего `/`, обязательный префикс `allowed_prefix`, ограничение длины;
-    - [ ] `list_objects(prefix, limit, cursor)` — одна страница `list_objects_v2` с `MaxKeys` и `ContinuationToken`,
+    - [x] `list_objects(prefix, limit, cursor)` — одна страница `list_objects_v2` с `MaxKeys` и `ContinuationToken`,
       возврат `(items, next_cursor)`;
-    - [ ] `get_presigned_url` — принимает произвольный ключ (проверка префикса остаётся на вызывающем коде, как и для
+    - [x] `get_presigned_url` — принимает произвольный ключ (проверка префикса остаётся на вызывающем коде, как и для
       `/files`).
-- [ ] Создать `app/schemas/recordings.py`: `RecordingItem` (ключ, поток, размер, время изменения),
+- [x] Создать `app/schemas/recordings.py`: `RecordingItem` (ключ, поток, размер, время изменения),
   `RecordingListResponse` (`items`, `next_cursor`).
-- [ ] Создать `app/api/routers/recordings.py` (`prefix="/recordings"`):
-    - [ ] `GET /recordings` — фильтры `stream`, `limit`, `cursor`; лимит `60/минуту` по `get_user_or_ip`;
-    - [ ] `GET /recordings/{key:path}` — presigned URL, `head_object` перед выдачей, 404 при отсутствии; лимит
+- [x] Создать `app/api/routers/recordings.py` (`prefix="/recordings"`):
+    - [x] `GET /recordings` — фильтры `stream`, `limit`, `cursor`; лимит `60/минуту` по `get_user_or_ip`;
+    - [x] `GET /recordings/{key:path}` — presigned URL, `head_object` перед выдачей, 404 при отсутствии; лимит
       `30/минуту`;
-    - [ ] `DELETE /recordings/{key:path}` — лимит `10/минуту`;
-    - [ ] security-события `recording.download` и `recording.delete` через `log_security_event`.
-- [ ] Зарегистрировать роутер в `app/main.py` **до** `streams_router` (у того catch-all `{path:path}`, а FastAPI матчит
+    - [x] `DELETE /recordings/{key:path}` — лимит `10/минуту`;
+    - [x] security-события `recording.download` и `recording.delete` через `log_security_event`.
+- [x] Зарегистрировать роутер в `app/main.py` **до** `streams_router` (у того catch-all `{path:path}`, а FastAPI матчит
   маршруты в порядке регистрации).
-- [ ] Тесты `tests/test_recordings_router.py`:
-    - [ ] 401 без токена и с отозванным токеном;
-    - [ ] обход префикса: `../secret.png`, `mediamtx-archives/../secret.png`, `/etc/passwd`,
+- [x] Тесты `tests/test_recordings_router.py`:
+    - [x] 401 без токена и с отозванным токеном;
+    - [x] обход префикса: `../secret.png`, `mediamtx-archives/../secret.png`, `/etc/passwd`,
       `mediamtx-archives%2F..%2F` → 400, не 500;
-    - [ ] пагинация: `next_cursor` возвращается и продолжает выборку;
-    - [ ] TTL ссылки соответствует `presigned_url_expiration` (mock);
-    - [ ] `recording.download` попадает в журнал безопасности.
-- [ ] Документация: `docs/backend.md` (раздел «Записи»), `docs/security.md` (таблицы rate limits и security events),
+    - [x] пагинация: `next_cursor` возвращается и продолжает выборку;
+    - [x] TTL ссылки соответствует `presigned_url_expiration` (mock);
+    - [x] `recording.download` попадает в журнал безопасности.
+- [x] Документация: `docs/backend.md` (раздел «Записи»), `docs/security.md` (таблицы rate limits и security events),
   `README.md` (таблица API), `.env.example`.
-- [ ] ТЗ: раздел 4.4 дополнить требованиями на выдачу архива, таблицу эндпоинтов §8 — тремя строками.
-- [ ] ADR-018 «Доступ к архиву записей отдельным ресурсом с ключом-путём».
+- [x] ТЗ: раздел 4.4 дополнить требованиями на выдачу архива, таблицу эндпоинтов §8 — тремя строками.
+- [x] ADR-018 «Доступ к архиву записей отдельным ресурсом с ключом-путём».
 
 ### A2. Пагинация и разделение `/files/` и архива
 

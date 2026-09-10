@@ -58,6 +58,7 @@ _FIELD_GROUPS: dict[str, str] = {
     "s3_access_key": _GROUP_S3,
     "s3_secret_key": _GROUP_S3,
     "presigned_url_expiration": _GROUP_S3,
+    "s3_archive_prefix": _GROUP_S3,
     "mtx_api_url": _GROUP_MEDIAMTX,
     "mtx_api_user": _GROUP_MEDIAMTX,
     "mtx_api_password": _GROUP_MEDIAMTX,
