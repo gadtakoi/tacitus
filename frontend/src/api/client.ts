@@ -274,3 +274,27 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
 }
+
+/**
+ * One application setting as reported by GET /settings.
+ *
+ * Credentials never leave the backend: for those, `value` is null and
+ * `sensitive` is true, while `is_set` still tells whether something is
+ * configured. Connection URLs are returned with the password replaced by
+ * `***`.
+ */
+export interface SettingItem {
+  name: string;
+  group: string;
+  value: string | null;
+  sensitive: boolean;
+  is_set: boolean;
+}
+
+export interface SettingsResponse {
+  items: SettingItem[];
+}
+
+export const settingsApi = {
+  list: () => apiFetch<SettingsResponse>("/settings"),
+};

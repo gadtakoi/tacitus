@@ -53,6 +53,7 @@ function StreamsPage() {
         <h1>Tacitus</h1>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           <button onClick={() => navigate("/files")}>Файлы</button>
+          <button onClick={() => navigate("/settings")}>Параметры</button>
           <button onClick={handleLogout}>
             Logout{username ? ` (${username})` : ""}
           </button>

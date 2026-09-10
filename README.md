@@ -66,6 +66,7 @@ scripts/init.sh --username admin --generate
 | `/files/{name}`   | DELETE | Bearer | Удаление файла                                  |
 | `/streams`        | GET    | Bearer | Список RTSP-потоков                             |
 | `/streams/{path}` | GET    | Bearer | Информация о потоке                             |
+| `/settings`       | GET    | Bearer | Параметры окружения (секреты скрыты)            |
 
 ## Тестирование
 
