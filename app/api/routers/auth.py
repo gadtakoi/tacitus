@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.core.ip import get_client_ip
 from app.core.rate_limit import limiter
 from app.core.security_logging import log_security_event
@@ -14,6 +15,7 @@ from app.db.engine import get_db_session
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
+    PasswordChangeRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -22,6 +24,7 @@ from app.schemas.auth import (
 from app.services.auth_service import (
     AuthError,
     authenticate_user,
+    change_password,
     create_access_token,
     create_refresh_token,
     is_brute_force_locked,
@@ -56,6 +59,23 @@ async def auth_register(
     """
     request_id = getattr(request.state, "request_id", "unknown")
     client_ip = get_client_ip(request)
+
+    # The check lives here and not in ``register_user``: the service function is
+    # also what ``scripts/init_project.py`` calls, and closing this endpoint
+    # must not take away the only remaining way to create an account.
+    if not settings.registration_enabled:
+        log_security_event(
+            "auth.register.disabled",
+            severity="warning",
+            ip=client_ip,
+            user=body.username,
+            extra={"request_id": request_id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled",
+        )
+
     logger.info("Registering user", extra={"request_id": request_id, "username": body.username})
     try:
         await register_user(session, body.username, body.password, client_ip)
@@ -239,3 +259,66 @@ async def auth_me(
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Fetching current user", extra={"request_id": request_id, "username": current_user})
     return UserResponse(username=current_user)
+
+
+@router.post("/password", response_model=UserResponse)
+@limiter.limit("5/minute")
+async def auth_change_password(
+    request: Request,
+    body: PasswordChangeRequest,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
+    current_user: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> UserResponse:
+    """Change the password of the authenticated user.
+
+    Knowing the access token is not enough: the current password has to be
+    presented as well, so a stolen token cannot be turned into permanent
+    ownership of the account.
+
+    On success every session of the user ends — the refresh-token family and
+    the access token of this request are revoked together with the password
+    update. The client has to sign in again with the new password.
+
+    Args:
+        request: FastAPI request.
+        body: Current and new password.
+        credentials: Authorization header credentials.
+        current_user: Authenticated username from JWT.
+        session: Database session.
+
+    Returns:
+        Confirmation carrying the username.
+
+    Raises:
+        HTTPException: 400 if the current password is wrong; 401 if the token
+            is missing; 429 if the rate limit is exceeded.
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    logger.info("Changing password", extra={"request_id": request_id, "username": current_user})
+    try:
+        await change_password(
+            session,
+            current_user,
+            body.current_password,
+            body.new_password,
+            credentials.credentials,
+        )
+    except AuthError as exc:
+        log_security_event(
+            "auth.password.change_failed",
+            severity="warning",
+            ip=get_client_ip(request),
+            user=current_user,
+            extra={"request_id": request_id},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+
+    return UserResponse(username=current_user, message="Password changed successfully")

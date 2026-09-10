@@ -80,6 +80,58 @@ class UserRepository(BaseRepository):
         )
         return bool(result.scalar_one())
 
+    async def is_active(self, username: str) -> bool:
+        """Check whether the account exists and may still authenticate.
+
+        Selects the single column instead of loading the ``User`` row: this
+        runs on every authenticated request, and ``User`` pulls its refresh
+        tokens along through ``lazy="selectin"``.
+
+        A username with no row answers ``False`` as well — a token outliving
+        the account it names must stop working for the same reason a disabled
+        account's token does.
+
+        Args:
+            username: Login name to check.
+
+        Returns:
+            ``True`` if the account exists and is active.
+        """
+        result = await self._session.execute(
+            select(User.is_active).where(User.username == username),
+        )
+        return bool(result.scalar_one_or_none())
+
+    async def update_password(self, username: str, password_hash: str) -> bool:
+        """Replace the stored password hash of a user.
+
+        Args:
+            username: Login name of the account.
+            password_hash: New passlib hash.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no such user exists.
+        """
+        result = await self._session.execute(
+            update(User).where(User.username == username).values(password_hash=password_hash),
+        )
+        return cast(CursorResult[Any], result).rowcount > 0
+
+    async def set_active(self, username: str, is_active: bool) -> bool:
+        """Enable or disable an account.
+
+        Args:
+            username: Login name of the account.
+            is_active: Whether the account may authenticate.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no such user exists.
+        """
+        result = await self._session.execute(
+            update(User).where(User.username == username).values(is_active=is_active),
+        )
+        return cast(CursorResult[Any], result).rowcount > 0
+
 
 class RefreshTokenRepository(BaseRepository):
     """Repository for refresh token lifecycle management."""

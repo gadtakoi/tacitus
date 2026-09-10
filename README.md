@@ -58,6 +58,7 @@ scripts/init.sh --username admin --generate
 | `/auth/login`     | POST   | Нет    | Логин (JWT)                                     |
 | `/auth/refresh`   | POST   | Нет    | Обмен refresh-токена на новую пару (с ротацией) |
 | `/auth/logout`    | POST   | Bearer | Отзыв access- и refresh-токена                  |
+| `/auth/password`  | POST   | Bearer | Смена своего пароля (все сессии прекращаются)   |
 | `/auth/me`        | GET    | Bearer | Текущий пользователь                            |
 | `/files/`         | GET    | Bearer | Список файлов: страница с курсором              |
 | `/files/upload`   | POST   | Bearer | Загрузка файла                                  |
@@ -105,6 +106,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 |---------------------------------------|--------------------------------------------------------------|--------------------------------------------------------------|
 | `TACITUS_ENVIRONMENT`                 | `development`                                                | `production` включает startup-проверки секретов              |
 | `TACITUS_DEBUG`                       | `false`                                                      | Текст исключения в ответе 500 и SQL-echo                     |
+| `TACITUS_REGISTRATION_ENABLED`        | `true`                                                       | Приём анонимных регистраций; в production выключается        |
 | `TACITUS_JWT_SECRET`                  | `dev-jwt-secret-change-me`                                   | Секрет для JWT (в production ≥ 32 символов)                  |
 | `TACITUS_JWT_ALGORITHM`               | `HS256`                                                      | Алгоритм JWT                                                 |
 | `TACITUS_JWT_EXPIRATION_MINUTES`      | `15`                                                         | TTL access-токена                                            |

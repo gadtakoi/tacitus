@@ -41,6 +41,35 @@ NewPassword = Annotated[str, Field(max_length=PASSWORD_MAX_LENGTH)]
 LoginPassword = Annotated[str, Field(max_length=LOGIN_PASSWORD_MAX_LENGTH)]
 
 
+def validate_password_strength(v: str) -> str:
+    """Check a password against the strength policy.
+
+    Applies wherever a password is *set* — registration and password change —
+    so that a change cannot install a password the same account could not have
+    been registered with.
+
+    Args:
+        v: Candidate password.
+
+    Returns:
+        The password unchanged.
+
+    Raises:
+        ValueError: If the password misses length or a character class.
+    """
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not any(c.isupper() for c in v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(c.islower() for c in v):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Password must contain at least one digit")
+    if not any(c in r"!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v):
+        raise ValueError("Password must contain at least one special character")
+    return v
+
+
 class RegisterRequest(BaseModel):
     """User registration request."""
 
@@ -51,17 +80,26 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_password(cls, v: str) -> str:
         """Validate password strength."""
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.islower() for c in v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        if not any(c in r"!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v):
-            raise ValueError("Password must contain at least one special character")
-        return v
+        return validate_password_strength(v)
+
+
+class PasswordChangeRequest(BaseModel):
+    """Password change request for the authenticated user.
+
+    The current password is bounded like a login password, not like a new one:
+    it was accepted by whatever policy existed when the account was created,
+    and rejecting it here would lock out exactly the accounts that most need a
+    new password.
+    """
+
+    current_password: LoginPassword
+    new_password: NewPassword
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        """Validate password strength."""
+        return validate_password_strength(v)
 
 
 class LoginRequest(BaseModel):

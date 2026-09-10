@@ -19,7 +19,7 @@ import pytest
 
 from app.db.repositories.auth import UserRepository
 from app.schemas.auth import RegisterRequest
-from app.services.auth_service import verify_password
+from app.services.auth_service import _hash_token, verify_password
 
 
 def _load_init_project() -> ModuleType:
@@ -218,3 +218,59 @@ async def test_second_run_is_a_no_op(init_project: ModuleType, db_session) -> No
     assert user is not None
     assert user.password_hash == original_hash
     assert verify_password("Str0ng-Password!", user.password_hash) is True
+
+
+def test_disable_and_enable_are_mutually_exclusive(init_project: ModuleType) -> None:
+    """One run flips one flag: the two options cannot be combined."""
+    parser = init_project.build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--disable", "someone", "--enable", "someone"])
+
+
+@pytest.mark.anyio
+async def test_disabling_ends_the_sessions_of_the_account(
+    init_project: ModuleType,
+    db_session,
+) -> None:
+    """Disabling clears the flag and revokes the refresh-token family.
+
+    Both halves matter: the flag stops the next request, and the revocation
+    keeps a later re-enable from resurrecting sessions opened before.
+    """
+    from app.db.repositories.auth import RefreshTokenRepository
+    from app.services.auth_service import create_refresh_token, store_refresh_token
+
+    await init_project.create_initial_user(db_session, "init_admin", "Str0ng-Password!")
+    token = create_refresh_token({"sub": "init_admin"})
+    await store_refresh_token(db_session, token, "init_admin")
+
+    updated = await init_project.toggle_account(db_session, "init_admin", False)
+
+    assert updated is True
+    user = await UserRepository(db_session).get_by_username("init_admin")
+    assert user is not None
+    assert user.is_active is False
+    assert await RefreshTokenRepository(db_session).is_valid(_hash_token(token)) is False
+
+
+@pytest.mark.anyio
+async def test_enabling_restores_the_account(init_project: ModuleType, db_session) -> None:
+    await init_project.create_initial_user(db_session, "init_admin", "Str0ng-Password!")
+    await init_project.toggle_account(db_session, "init_admin", False)
+
+    updated = await init_project.toggle_account(db_session, "init_admin", True)
+
+    assert updated is True
+    user = await UserRepository(db_session).get_by_username("init_admin")
+    assert user is not None
+    assert user.is_active is True
+
+
+@pytest.mark.anyio
+async def test_toggling_a_missing_account_reports_failure(
+    init_project: ModuleType,
+    db_session,
+) -> None:
+    """Silence here would let an operator believe an account was shut down."""
+    assert await init_project.toggle_account(db_session, "no-such-user", False) is False

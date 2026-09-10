@@ -440,6 +440,24 @@ async def rotate_refresh_token(
         raise AuthError("Invalid or expired refresh token")
 
     username = stored["sub"]
+
+    # Checked before reuse detection, and that order matters for the audit log.
+    # Disabling an account revokes its refresh tokens, so presenting one
+    # afterwards looks exactly like replaying a stolen token — and would be
+    # recorded as ``auth.refresh.reuse_detected``, sending an operator after a
+    # compromise that never happened. A disabled account is the likelier
+    # explanation of the two, so it is ruled out first.
+    if not await is_user_active(session, username):
+        # Rotation is what makes a session outlive its access token, so an
+        # account disabled mid-session has to be stopped here as well —
+        # otherwise it renews itself for as long as the client keeps asking.
+        # The family goes with it: a re-enabled account should start from a
+        # fresh login, not resume the session that was cut off.
+        logger.warning("Refresh attempted for a disabled account", extra={"user": username})
+        await _revoke_all_user_tokens(session, username)
+        log_security_event("auth.inactive_user", severity="warning", user=username)
+        raise AuthError("Account is disabled")
+
     if stored.get("already_revoked"):
         # Reuse of a revoked token: assume compromise, kill the whole family.
         logger.warning(
@@ -806,3 +824,147 @@ async def get_user(session: AsyncSession, username: str) -> dict[str, Any] | Non
     if user is None:
         return None
     return {"username": user.username}
+
+
+async def is_user_active(session: AsyncSession, username: str) -> bool:
+    """Check whether the account behind a token may still be used.
+
+    Called on every authenticated request and on every refresh rotation: the
+    ``is_active`` flag is worth nothing if it is only read at login. An account
+    disabled at 10:00 would otherwise keep working until its access token
+    expired and — because rotation issues a fresh pair each time — could renew
+    itself indefinitely.
+
+    Args:
+        session: Database session.
+        username: Username taken from the token's ``sub`` claim.
+
+    Returns:
+        ``True`` if the account exists and is active.
+
+    Raises:
+        AppError: On unexpected database errors.
+    """
+    repo = UserRepository(session)
+    try:
+        return await repo.is_active(username)
+    except DBAPIError as exc:
+        logger.exception("Database error while checking account status")
+        raise AppError("Failed to validate account status", status_code=500) from exc
+
+
+async def change_password(
+    session: AsyncSession,
+    username: str,
+    current_password: str,
+    new_password: str,
+    access_token: str,
+) -> None:
+    """Replace a user's password and end every session it protected.
+
+    A password is changed for one of two reasons: it leaked, or it might have.
+    Both make the sessions opened with the old one suspect, so the change also
+    revokes the whole refresh-token family and blacklists the access token that
+    authorized this very request. The caller signs in again — with the new
+    password, on a session nobody else holds.
+
+    Everything lands in one transaction: a hash written without the revocations
+    would leave the old sessions alive against a password that no longer exists.
+
+    Args:
+        session: Database session.
+        username: Account whose password is being changed.
+        current_password: Password presented as proof of ownership.
+        new_password: Replacement password, already validated by the schema.
+        access_token: Raw access token of the current request; revoked so the
+            change takes effect immediately for this client too.
+
+    Raises:
+        AuthError: If the account is gone or ``current_password`` is wrong.
+        AppError: On unexpected database errors.
+    """
+    repo = UserRepository(session)
+    try:
+        user = await repo.get_by_username(username)
+    except DBAPIError as exc:
+        logger.exception("Database error while loading user for password change")
+        raise AppError("Failed to change password", status_code=500) from exc
+
+    if user is None or not user.is_active:
+        # The token was valid a moment ago, so this is a race with a deletion
+        # or a disable rather than an enumeration attempt.
+        raise AuthError("Account is not available")
+    if not verify_password(current_password, user.password_hash):
+        # Deliberately not distinguished from the case above in the response:
+        # the caller learns only that the change did not happen.
+        raise AuthError("Current password is incorrect")
+
+    try:
+        await repo.update_password(username, hash_password(new_password))
+        refresh_repo = RefreshTokenRepository(session)
+        revoked = await refresh_repo.revoke_all_for_user(user.id)
+        await revoke_access_token(session, access_token)
+        await session.commit()
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while changing password")
+        raise AppError("Failed to change password", status_code=500) from exc
+
+    logger.info(
+        "Password changed; all sessions revoked",
+        extra={"user": username, "revoked_refresh_tokens": revoked},
+    )
+    log_security_event(
+        "auth.password.changed",
+        user=username,
+        extra={"revoked_refresh_tokens": revoked},
+    )
+
+
+async def set_user_active(session: AsyncSession, username: str, active: bool) -> bool:
+    """Enable or disable an account.
+
+    Disabling revokes the refresh-token family as well. The flag alone would
+    already stop the account at the next request (:func:`is_user_active`), but
+    leaving valid refresh tokens behind means re-enabling the account silently
+    resurrects sessions that were open before it was disabled.
+
+    Args:
+        session: Database session.
+        username: Account to change.
+        active: ``True`` to enable, ``False`` to disable.
+
+    Returns:
+        ``True`` if the account exists and was updated, ``False`` otherwise.
+
+    Raises:
+        AppError: On unexpected database errors.
+    """
+    repo = UserRepository(session)
+    try:
+        user = await repo.get_by_username(username)
+        if user is None:
+            return False
+        await repo.set_active(username, active)
+        revoked = 0
+        if not active:
+            refresh_repo = RefreshTokenRepository(session)
+            revoked = await refresh_repo.revoke_all_for_user(user.id)
+        await session.commit()
+    except (IntegrityError, DBAPIError) as exc:
+        await session.rollback()
+        logger.exception("Database error while changing account status")
+        raise AppError("Failed to change account status", status_code=500) from exc
+
+    event = "user.enabled" if active else "user.disabled"
+    logger.info(
+        "Account status changed",
+        extra={"user": username, "active": active, "revoked_refresh_tokens": revoked},
+    )
+    log_security_event(
+        event,
+        severity="warning" if not active else "info",
+        user=username,
+        extra={"revoked_refresh_tokens": revoked},
+    )
+    return True

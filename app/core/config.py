@@ -1,5 +1,7 @@
 """Application configuration."""
 
+import logging
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,6 +40,13 @@ class Settings(BaseSettings):
         max_length=256,
         description="Key prefix of archived recordings inside the S3 bucket.",
     )
+
+    # Whether ``POST /auth/register`` accepts new accounts. There are no roles:
+    # every authenticated user reaches every file, recording and stream
+    # configuration, so an open registration form is a way in for anyone who
+    # can reach the port. Deployments create accounts with ``scripts/init.sh``
+    # instead, which is why turning this off leaves no one locked out.
+    registration_enabled: bool = True
 
     jwt_secret: str = Field(default="dev-jwt-secret-change-me")
     jwt_algorithm: str = "HS256"
@@ -154,6 +163,18 @@ def validate_startup_settings() -> None:
         if "*" in origins:
             msg = "Wildcard CORS origin (*) is not allowed in production"
             raise RuntimeError(msg)
+        if settings.registration_enabled:
+            # A warning, not a refusal: an open registration form is a
+            # deliberate choice for some installations, and there is no way for
+            # the process to tell that choice from an oversight. The default for
+            # a deployed stack is off (ansible .env.j2), so reaching this line
+            # at all means someone turned it back on.
+            logging.getLogger(__name__).warning(
+                "Anonymous registration is enabled in production: "
+                "any client that can reach the API can create an account "
+                "with full access. Set TACITUS_REGISTRATION_ENABLED=false "
+                "and create accounts with scripts/init.sh."
+            )
 
 
 def api_docs_enabled() -> bool:

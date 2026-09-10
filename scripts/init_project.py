@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Project initialization script.
+"""Project initialization and account management script.
 
 Right now the project needs exactly one initialization step that no container
 performs on its own: creating the first application user, without which the UI
 and the API cannot be logged into. Everything else is already provisioned by
 docker compose — the database schema by the ``db-migrations`` service, the S3
 bucket by ``minio-init``.
+
+The same script disables and re-enables accounts (``--disable`` / ``--enable``).
+With ``TACITUS_REGISTRATION_ENABLED=false`` — the default for a deployed stack —
+this is the only way accounts are created, so it has to be the way they are shut
+down as well.
 
 The script is idempotent. A second run with the same username leaves the
 existing account untouched — the password is never overwritten — and exits 0,
@@ -25,14 +30,17 @@ Usage::
     python scripts/init_project.py --username admin
     python scripts/init_project.py --username admin --generate
     printf '%s' "$password" | python scripts/init_project.py -u admin --password-stdin
+    python scripts/init_project.py --disable olduser
+    python scripts/init_project.py --enable olduser
 
 Normally invoked through ``scripts/init.sh``, which runs it inside the ``app``
 container where ``TACITUS_DATABASE_URL`` already points at PostgreSQL.
 
 Exit codes:
-    0 — the user was created, or already existed;
+    0 — the user was created, already existed, or the account flag was flipped;
     1 — the database is unreachable, the schema is missing, or another failure;
-    2 — invalid arguments, or credentials rejected by the password policy.
+    2 — invalid arguments, credentials rejected by the password policy, or the
+        account named by ``--disable``/``--enable`` does not exist.
 """
 
 from __future__ import annotations
@@ -62,7 +70,7 @@ from app.core.exceptions import AppError  # noqa: E402
 from app.core.logging_config import setup_logging  # noqa: E402
 from app.db.engine import AsyncSessionLocal, engine  # noqa: E402
 from app.schemas.auth import RegisterRequest  # noqa: E402
-from app.services.auth_service import AuthError, register_user  # noqa: E402
+from app.services.auth_service import AuthError, register_user, set_user_active  # noqa: E402
 
 # Exit codes. Separating "bad input" from "the system is not ready" lets a
 # caller retry the second and never the first.
@@ -332,6 +340,36 @@ async def create_initial_user(session: AsyncSession, username: str, password: st
     return True
 
 
+async def toggle_account(session: AsyncSession, username: str, active: bool) -> bool:
+    """Enable or disable an existing account.
+
+    Disabling is the counterpart to closing registration: with
+    ``TACITUS_REGISTRATION_ENABLED=false`` accounts are created here, so they
+    have to be revocable here too — otherwise the only way to shut one down is
+    an UPDATE typed into psql by hand.
+
+    Args:
+        session: Async database session.
+        username: Login name of the account.
+        active: ``True`` to enable, ``False`` to disable.
+
+    Returns:
+        ``True`` if the account exists and was updated, ``False`` if there is
+        no such user.
+
+    Raises:
+        InitError: If the database rejects the operation.
+    """
+    try:
+        return await set_user_active(session, username, active)
+    except AppError as exc:
+        msg = (
+            f"Не удалось изменить состояние учётной записи: {exc.message}. "
+            "Проверьте, что база доступна и миграции применены."
+        )
+        raise InitError(msg, EXIT_FAILURE) from exc
+
+
 async def run(username: str, password: str) -> bool:
     """Open a database session, create the user and release the engine.
 
@@ -359,6 +397,32 @@ async def run(username: str, password: str) -> bool:
     finally:
         # Without this the pooled asyncpg connections keep the event loop's
         # transports open and the interpreter exits with a warning.
+        await engine.dispose()
+
+
+async def run_toggle(username: str, active: bool) -> bool:
+    """Open a database session, flip the account flag and release the engine.
+
+    Args:
+        username: Login name of the account.
+        active: ``True`` to enable, ``False`` to disable.
+
+    Returns:
+        ``True`` if the account exists and was updated.
+
+    Raises:
+        InitError: If the database cannot be reached.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            return await toggle_account(session, username, active)
+    except (SQLAlchemyError, OSError) as exc:
+        msg = (
+            f"Нет соединения с базой данных ({type(exc).__name__}). "
+            "Проверьте, что PostgreSQL запущен и TACITUS_DATABASE_URL указывает на него."
+        )
+        raise InitError(msg, EXIT_FAILURE) from exc
+    finally:
         await engine.dispose()
 
 
@@ -392,7 +456,44 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Сгенерировать пароль и напечатать его один раз",
     )
+    # Отключение и включение исключают друг друга и не сочетаются с созданием:
+    # это операции над уже существующей записью, пароль для них не нужен.
+    status_group = parser.add_mutually_exclusive_group()
+    status_group.add_argument(
+        "--disable",
+        metavar="USERNAME",
+        help="Отключить учётную запись и отозвать её refresh-токены",
+    )
+    status_group.add_argument(
+        "--enable",
+        metavar="USERNAME",
+        help="Включить ранее отключённую учётную запись",
+    )
     return parser
+
+
+def handle_account_status(username: str, active: bool) -> int:
+    """Run the enable/disable path and report the result.
+
+    Args:
+        username: Login name of the account.
+        active: ``True`` to enable, ``False`` to disable.
+
+    Returns:
+        Process exit code.
+    """
+    updated = asyncio.run(run_toggle(username.strip(), active))
+    if not updated:
+        # Не идемпотентный случай, а отсутствие цели: молчаливый успех здесь
+        # означал бы, что оператор считает отключённой запись, которой нет.
+        print(f"Ошибка: пользователь '{username}' не найден.", file=sys.stderr)
+        return EXIT_USAGE
+
+    if active:
+        print(f"Учётная запись '{username}' включена.")
+    else:
+        print(f"Учётная запись '{username}' отключена, активные сессии прекращены.")
+    return EXIT_OK
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -414,6 +515,16 @@ def main(argv: list[str] | None = None) -> int:
     # A prompt is only possible when stdin is a terminal. ``--password-stdin``
     # consumes stdin itself, so it rules prompting out as well.
     interactive = sys.stdin.isatty() and not args.password_stdin
+
+    if args.disable or args.enable:
+        try:
+            return handle_account_status(
+                args.disable or args.enable,
+                active=bool(args.enable),
+            )
+        except InitError as exc:
+            print(f"Ошибка: {exc.message}", file=sys.stderr)
+            return exc.exit_code
 
     try:
         username = resolve_username(args.username, interactive=interactive)

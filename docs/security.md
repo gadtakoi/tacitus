@@ -41,6 +41,7 @@ Nginx добавляет следующие security headers ко всем от�
 | `POST /auth/register`    | 3/час  | IP           |
 | `POST /auth/refresh`     | 10/мин | IP           |
 | `POST /auth/logout`      | 10/мин | пользователь |
+| `POST /auth/password`    | 5/мин  | пользователь |
 | `GET /auth/me`           | 60/мин | пользователь |
 | `POST /files/upload`     | 10/мин | пользователь |
 | `GET /files/`            | 60/мин | пользователь |
@@ -60,7 +61,7 @@ Nginx добавляет следующие security headers ко всем от�
 запросах обычно нет заголовка `Authorization`; для `logout` и `me` — имя
 пользователя из JWT.
 
-Клиентский IP берётся с учётом `TACITUS_TRUSTED_PROXY_HOPS` — см. §2.7, иначе
+Клиентский IP берётся с учётом `TACITUS_TRUSTED_PROXY_HOPS` — см. §2.8, иначе
 лимит обходится подделкой `X-Forwarded-For`.
 
 При превышении возвращается `429 Too Many Requests`.
@@ -260,7 +261,72 @@ basename и вместе со структурой каталога уничто
 необратимо: переход «запись → архив» уже удалил локальную копию, и объект в
 S3/MinIO — единственный оставшийся экземпляр.
 
-### 2.6 Startup Secret Validation
+### 2.6 Жизненный цикл учётной записи
+
+Ролей в сервисе нет: любой аутентифицированный пользователь достаёт все файлы,
+все записи и все конфигурации потоков. Поэтому вопрос «кто может войти»
+решается не правами, а составом учётных записей — и тремя механизмами вокруг
+него.
+
+#### Регистрация выключается
+
+`TACITUS_REGISTRATION_ENABLED=false` закрывает `POST /auth/register`: ответ
+403, учётная запись не создаётся, в журнал пишется `auth.register.disabled` с
+адресом и запрошенным именем. В развёрнутом стеке параметр выключен по
+умолчанию (`ansible/roles/app_deploy/templates/.env.j2`); при
+`TACITUS_ENVIRONMENT=production` и включённой регистрации приложение пишет
+предупреждение при старте — но не отказывается стартовать: открытая
+регистрация бывает осознанным выбором, и процесс не может отличить его от
+недосмотра.
+
+Проверка стоит в роутере, а не в `register_user`. Ту же функцию вызывает
+`scripts/init_project.py`, и закрытие endpoint'а не должно отнимать
+единственный оставшийся способ завести пользователя.
+
+#### `is_active` действует на всю сессию, а не на момент входа
+
+Флаг проверяется в трёх местах:
+
+| Место                       | Что происходит при `is_active = false`                      |
+|-----------------------------|--------------------------------------------------------------|
+| `authenticate_user` (вход)  | 401, стоимость ответа та же, что у неверного пароля (§2.2)   |
+| `get_current_user` (каждый запрос) | 401 `Account is disabled`, событие `auth.inactive_user` |
+| `rotate_refresh_token`      | 401, отзыв семейства токенов, событие `auth.inactive_user`   |
+
+Проверки при входе одной недостаточно: access-токен живёт 15 минут, а ротация
+выдаёт новую пару на каждый запрос — сессия отключённого пользователя
+продлевала бы себя бесконечно. Цена — один `SELECT is_active` на
+аутентифицированный запрос, в сессии БД, уже открытой ради проверки `jti` по
+списку отозванных.
+
+Тот же ответ получает токен, ссылающийся на удалённую запись: `is_active`
+возвращает `false` и для отсутствующего пользователя.
+
+В ротации проверка идёт **до** обнаружения повторного использования. Отключение
+отзывает refresh-токены, поэтому предъявленный после него токен неотличим от
+краденого — и без этого порядка обычное отключение попадало бы в журнал как
+`auth.refresh.reuse_detected`, отправляя оператора искать несуществующую
+компрометацию.
+
+#### Отключение и смена пароля
+
+Отключение — `scripts/init.sh --disable <username>` (и `--enable` обратно).
+Кроме флага оно отзывает семейство refresh-токенов: иначе повторное включение
+воскресило бы сессии, открытые до отключения. Несуществующее имя — ошибка с
+кодом 2, а не молчаливый успех.
+
+`POST /auth/password` требует действующий пароль **дополнительно** к
+действующему токену: украденный токен не должен превращаться в постоянное
+владение учётной записью. Успешная смена в одной транзакции обновляет хеш,
+отзывает семейство refresh-токенов и заносит `jti` текущего access-токена в
+список отозванных — клиент входит заново с новым паролем. Неверный текущий
+пароль отвечает 400, не меняет ничего и не разрывает сессию: чужая догадка не
+повод разлогинивать владельца.
+
+Новый пароль проходит ту же политику, что и пароль при регистрации (§2.3):
+общая функция `validate_password_strength`.
+
+### 2.7 Startup Secret Validation
 
 При `TACITUS_ENVIRONMENT=production` приложение падает с `RuntimeError`, если
 (`app/core/config.py::validate_startup_settings`):
@@ -284,7 +350,7 @@ S3/MinIO — единственный оставшийся экземпляр.
 останавливает установку ещё до копирования файлов, если при
 `tacitus_environment=production` секреты остались дефолтными.
 
-### 2.7 Определение IP клиента (trusted proxy)
+### 2.8 Определение IP клиента (trusted proxy)
 
 IP клиента управляет rate limiting, блокировкой brute-force и аудитом
 `security_events`, поэтому он не должен выбираться самим клиентом.
@@ -312,7 +378,7 @@ IP клиента управляет rate limiting, блокировкой brute
 Реализация — `app/core/ip.py::get_client_ip`, регрессионные тесты —
 `tests/test_client_ip.py`.
 
-### 2.8 MediaMTX Authentication (RTSP и Control API)
+### 2.9 MediaMTX Authentication (RTSP и Control API)
 
 MediaMTX поставляется с **анонимным дефолтом**: без секции
 `authInternalUsers` встроенный список выдаёт `user: any` с пустым паролем
@@ -424,7 +490,7 @@ ALLOWED_TYPES = {
 
 - В production generic 500 возвращает безопасное сообщение `"Internal server error"` без stack trace.
 - В debug-режиме (`TACITUS_DEBUG=true`) возвращается текст исключения. Поэтому
-  при `TACITUS_ENVIRONMENT=production` debug запрещён на старте (§2.6).
+  при `TACITUS_ENVIRONMENT=production` debug запрещён на старте (§2.7).
 - **Ошибки валидации (422) не возвращают присланное значение.** Обработчик
   `validation_error_handler` оставляет только `type`, `loc` и `msg`, удаляя
   поля `input` и `ctx`. По умолчанию FastAPI кладёт в `input` то, что прислал
@@ -491,7 +557,7 @@ PostgreSQL и Redis. RTSP по умолчанию слушает loopback.
 
 Защита от их утечки в production — не отсутствие дефолтов, а два барьера:
 
-1. `validate_startup_settings()` (§2.6) роняет приложение при
+1. `validate_startup_settings()` (§2.7) роняет приложение при
    `TACITUS_ENVIRONMENT=production` с дефолтными S3-ключами или коротким
    JWT-секретом.
 2. Pre-check в `ansible/playbook.yml` не даёт запустить production-деплой с
@@ -516,6 +582,12 @@ Dedicated security logger (`app.core.security_logging`) фиксирует со�
 | `auth.refresh.reuse_detected` | warning  | user                      |
 | `auth.token.revoked`          | info     | ip, user, refresh_revoked |
 | `auth.logout.foreign_refresh_token` | warning | user, token_owner |
+| `auth.register.disabled`      | warning  | ip, user                  |
+| `auth.inactive_user`          | warning  | ip (при запросе к API), user |
+| `auth.password.changed`       | info     | user, revoked_refresh_tokens |
+| `auth.password.change_failed` | warning  | ip, user                  |
+| `user.disabled`               | warning  | user, revoked_refresh_tokens |
+| `user.enabled`                | info     | user                      |
 | `file.upload`                 | info     | ip, user, file_name, size |
 | `file.download`               | info     | ip, user, file_name       |
 | `file.delete`                 | info     | ip, user, file_name       |

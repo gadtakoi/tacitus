@@ -4,8 +4,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ip import get_client_ip
+from app.core.security_logging import log_security_event
 from app.db.engine import get_db_session
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, is_user_active
 
 security = HTTPBearer(auto_error=False)
 
@@ -52,6 +54,25 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # A valid signature only proves the token was issued, not that the account
+    # behind it still exists and may be used. Without this check disabling an
+    # account would take effect no earlier than its access token expired — and
+    # never at all, since rotation keeps issuing fresh ones. The row is read
+    # through the session already open for the revocation check above, and only
+    # one column of it.
+    if not await is_user_active(session, username):
+        log_security_event(
+            "auth.inactive_user",
+            severity="warning",
+            ip=get_client_ip(request),
+            user=username,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return username

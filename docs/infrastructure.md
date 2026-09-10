@@ -70,7 +70,7 @@ services:
 
 - Сервис `app` не публикует порт `8000` — приложение достижимо только через
   nginx. На этом основана модель доверенного прокси для `X-Forwarded-For`
-  (см. `docs/security.md` → §2.7).
+  (см. `docs/security.md` → §2.8).
 
 ### Баннеры и страницы ошибок
 
@@ -108,7 +108,7 @@ Encrypt».
 - **Протоколы:** включён только RTSP (`rtsp: yes`), ретрансляция отключена (`rtmp/hls/webrtc/srt: no`)
 - **Аутентификация:** `authInternalUsers` с разделением по действиям —
   `publisher` (publish), `reader` (read/playback), `tacitus-api` (api).
-  См. `docs/security.md` §2.8 и ADR-012
+  См. `docs/security.md` §2.9 и ADR-012
 - **Запись:** `record: yes`, формат `fmp4`, сегментация по 1 часу
 - **Volume:** `./recordings:/recordings` (bind mount на хосте)
 - **Конфиг:** `./mediamtx/mediamtx.yml:/mediamtx.yml:ro`, в production

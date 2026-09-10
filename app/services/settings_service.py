@@ -48,6 +48,7 @@ _FIELD_GROUPS: dict[str, str] = {
     "port": _GROUP_APP,
     "cors_origins": _GROUP_NETWORK,
     "trusted_proxy_hops": _GROUP_NETWORK,
+    "registration_enabled": _GROUP_AUTH,
     "jwt_secret": _GROUP_AUTH,
     "jwt_algorithm": _GROUP_AUTH,
     "jwt_expiration_minutes": _GROUP_AUTH,

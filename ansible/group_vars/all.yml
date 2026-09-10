@@ -30,6 +30,11 @@ tacitus_cors_origins: >-
 # X-Forwarded-For entry is trusted as the client IP.
 tacitus_trusted_proxy_hops: 1
 
+# Anonymous registration through POST /auth/register. Off on a deployed stack:
+# an account created that way has the same access as every other one, and the
+# first account is created by scripts/init.sh anyway.
+tacitus_registration_enabled: false
+
 # Secrets (override via -e for production)
 tacitus_jwt_secret: "change-me-in-production"
 tacitus_s3_access_key: "minioadmin"
