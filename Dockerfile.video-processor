@@ -1,0 +1,74 @@
+# Image for the video crop worker.
+#
+# Separate from the application image on purpose. The API image runs with
+# ``read_only: true`` and is the base for db-migrations and mediamtx-cleanup as
+# well; adding ~250 MB of ffmpeg to it would bloat three services that never
+# decode a frame. The MediaMTX image carries ffmpeg already but only busybox
+# ash, and the worker needs Python and the ORM models to read per-stream
+# settings out of PostgreSQL.
+#
+# ffmpeg version note: the stack now contains two of them — this one from
+# Debian, and the one baked into ``bluenviron/mediamtx:1.15.1-ffmpeg`` (6.1.2)
+# used by mediamtx and stream-simulator. They do different jobs and are not
+# interchangeable; see docs/infrastructure.md before changing either.
+
+# Build stage
+FROM python:3.14.5-slim AS builder
+
+WORKDIR /build
+
+# Same hash-pinned lockfile as the application image, for the same reason: the
+# exact set of packages is decided by requirements.txt and nothing else.
+# ``--require-hashes`` refuses any artifact whose digest does not match and
+# forbids unpinned or transitively-resolved additions.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+
+# Runtime stage
+FROM python:3.14.5-slim AS runtime
+
+# PYTHONPATH is not redundant with WORKDIR. The worker is started as a script,
+# so Python puts scripts/ on sys.path instead of the working directory and
+# ``import app.db.models`` fails. The application image needs no equivalent
+# because uvicorn is handed a module path and imports from the working
+# directory itself.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    APP_HOME=/app \
+    PYTHONPATH=/app
+
+WORKDIR ${APP_HOME}
+
+# ffmpeg and ffprobe. The Debian package version is deliberately not pinned:
+# Debian removes superseded versions from the archive on every point release,
+# so a pinned build breaks without warning and without a security reason. The
+# base image tag is pinned, which fixes the Debian release the package comes
+# from; the resolved version is printed into the build log so it can be read
+# back from any image that was actually produced.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version | head -n 1
+
+# Create non-privileged user. Same uid as MediaMTX writes recordings with, so
+# the worker can replace the segments it is pointed at.
+RUN groupadd --gid 1000 tacitus && \
+    useradd --uid 1000 --gid tacitus --shell /bin/false tacitus
+
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+
+# The ORM models are imported to read the ``streams`` table; the worker does
+# not import the FastAPI application or its settings.
+COPY app/ ./app/
+COPY scripts/video-crop-worker.py ./scripts/video-crop-worker.py
+
+RUN chown -R tacitus:tacitus ${APP_HOME}
+
+USER tacitus
+
+# No HEALTHCHECK: the worker serves no port and spends nearly all of its time
+# asleep between sweeps, so a probe could only report "the process exists",
+# which Docker already knows.
+
+CMD ["python", "scripts/video-crop-worker.py"]

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 
 class StreamSource(BaseModel):
@@ -113,6 +113,41 @@ def _validate_optional_source(value: str | None) -> str | None:
     return value if value is None else _validate_source(value)
 
 
+# Crop percentages are bounded twice over: once here, once by CHECK constraints
+# on the ``streams`` table. Cropping replaces the recorded segment in place, so
+# a setting that leaves nothing of the frame destroys footage that cannot be
+# recovered.
+#
+# The rule that carries the weight is the combined one: whatever the split
+# between the two edges, at least a tenth of the frame has to survive. The
+# per-edge bound is the same number because removing everything but the bottom
+# tenth is a legitimate setting for a camera aimed mostly at the sky.
+MAX_CROP_PERCENT = 90
+MAX_CROP_TOTAL_PERCENT = 90
+
+
+def validate_crop_total(top: int, bottom: int) -> None:
+    """Check that a crop leaves a usable part of the frame.
+
+    Exposed rather than private because a partial update reaches this rule only
+    after the incoming fields have been merged with the stored ones, which
+    happens in the service layer.
+
+    Args:
+        top: Percentage removed from the top of the frame.
+        bottom: Percentage removed from the bottom of the frame.
+
+    Raises:
+        ValueError: If the two together remove more than
+            ``MAX_CROP_TOTAL_PERCENT`` of the frame height.
+    """
+    if top + bottom > MAX_CROP_TOTAL_PERCENT:
+        raise ValueError(f"Crop percentages together must not exceed {MAX_CROP_TOTAL_PERCENT}")
+
+
+CropPercent = Annotated[int, Field(ge=0, le=MAX_CROP_PERCENT)]
+
+
 StreamName = Annotated[
     str,
     Field(min_length=1, max_length=64),
@@ -142,8 +177,16 @@ class StreamConfig(BaseModel):
     name: StreamName
     source: SourceSpec = "publisher"
     record_enabled: bool = True
+    crop_enabled: bool = False
+    crop_top_percent: CropPercent = 0
+    crop_bottom_percent: CropPercent = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def _check_crop_total(self) -> StreamConfig:
+        validate_crop_total(self.crop_top_percent, self.crop_bottom_percent)
+        return self
 
 
 class StreamCreateRequest(BaseModel):
@@ -152,10 +195,27 @@ class StreamCreateRequest(BaseModel):
     name: StreamName
     source: SourceSpec = "publisher"
     record_enabled: bool = True
+    crop_enabled: bool = False
+    crop_top_percent: CropPercent = 0
+    crop_bottom_percent: CropPercent = 0
+
+    @model_validator(mode="after")
+    def _check_crop_total(self) -> StreamCreateRequest:
+        validate_crop_total(self.crop_top_percent, self.crop_bottom_percent)
+        return self
 
 
 class StreamUpdateRequest(BaseModel):
-    """Request schema for updating an existing stream."""
+    """Request schema for updating an existing stream.
+
+    Every field is optional, so the combined crop total cannot be checked here:
+    a request that only raises ``crop_top_percent`` is legal or not depending on
+    the stored ``crop_bottom_percent``. That rule is applied in the service
+    layer, once the update has been merged with the stored row.
+    """
 
     source: OptionalSourceSpec = None
     record_enabled: bool | None = None
+    crop_enabled: bool | None = None
+    crop_top_percent: CropPercent | None = None
+    crop_bottom_percent: CropPercent | None = None

@@ -9,6 +9,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.files import router as files_router
+from app.api.routers.stream_configs import router as stream_configs_router
 from app.api.routers.streams import router as streams_router
 from app.core.config import settings, validate_startup_settings
 from app.core.exceptions import (
@@ -62,6 +63,9 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)  # t
 app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(auth_router)
 app.include_router(files_router)
+# Registered before the streams router: that one ends in a ``{path:path}``
+# catch-all, and FastAPI matches routes in registration order.
+app.include_router(stream_configs_router)
 app.include_router(streams_router)
 
 

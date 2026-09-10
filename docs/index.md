@@ -2,6 +2,7 @@
 
 ## Оглавление
 
+- [Техническое задание](ToR_Tacitus_v1.0.md) — требования к сервису: роли, функции, данные, API, конфигурация, безопасность
 - [Backend](backend.md) — FastAPI, архитектура, слои приложения, интеграция с MediaMTX
 - [Frontend](frontend.md) — React, Vite, TypeScript, API клиент
 - [Инфраструктура](infrastructure.md) — Docker Compose, Nginx, MinIO, MediaMTX, ротация архивов

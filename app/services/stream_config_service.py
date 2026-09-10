@@ -5,8 +5,18 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Stream
-from app.db.repositories.streams import StreamRepository, StreamRepositoryError
-from app.schemas.streams import StreamConfig, StreamCreateRequest, StreamUpdateRequest
+from app.db.repositories.streams import (
+    StreamAlreadyExistsError,
+    StreamNotFoundError,
+    StreamRepository,
+    StreamRepositoryError,
+)
+from app.schemas.streams import (
+    StreamConfig,
+    StreamCreateRequest,
+    StreamUpdateRequest,
+    validate_crop_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +27,18 @@ class StreamConfigError(Exception):
     def __init__(self, message: str) -> None:
         self.message = message
         super().__init__(message)
+
+
+class StreamConfigNotFoundError(StreamConfigError):
+    """The requested stream configuration does not exist."""
+
+
+class StreamConfigConflictError(StreamConfigError):
+    """The requested stream configuration collides with an existing one."""
+
+
+class StreamConfigValidationError(StreamConfigError):
+    """The resulting stream configuration is not valid."""
 
 
 async def create_stream(db: AsyncSession, request: StreamCreateRequest) -> StreamConfig:
@@ -30,12 +52,15 @@ async def create_stream(db: AsyncSession, request: StreamCreateRequest) -> Strea
         Created stream configuration.
 
     Raises:
-        StreamConfigError: If stream with given name already exists.
+        StreamConfigConflictError: If a stream with that name already exists.
     """
     repo = StreamRepository(db)
     try:
         model = await repo.create(request)
         await db.commit()
+    except StreamAlreadyExistsError as exc:
+        await db.rollback()
+        raise StreamConfigConflictError(exc.message) from exc
     except StreamRepositoryError as exc:
         await db.rollback()
         raise StreamConfigError(exc.message) from exc
@@ -84,16 +109,50 @@ async def update_stream(db: AsyncSession, name: str, request: StreamUpdateReques
         Updated stream configuration.
 
     Raises:
-        StreamConfigError: If stream does not exist.
+        StreamConfigNotFoundError: If the stream does not exist.
+        StreamConfigValidationError: If the merged crop settings would remove
+            too much of the frame.
     """
     repo = StreamRepository(db)
+    current = await repo.get_by_name(name)
+    if current is None:
+        raise StreamConfigNotFoundError(f"Stream '{name}' not found")
+
+    # A partial update carries only the fields the caller wants changed, so the
+    # "top + bottom" rule can only be judged against the stored row. Checked
+    # before the write rather than relying on the CHECK constraint: the
+    # constraint raises an IntegrityError, which surfaces as a 500.
+    merged_top = (
+        current.crop_top_percent if request.crop_top_percent is None else request.crop_top_percent
+    )
+    merged_bottom = (
+        current.crop_bottom_percent
+        if request.crop_bottom_percent is None
+        else request.crop_bottom_percent
+    )
+    try:
+        validate_crop_total(merged_top, merged_bottom)
+    except ValueError as exc:
+        raise StreamConfigValidationError(str(exc)) from exc
+
     try:
         model = await repo.update(name, request)
         await db.commit()
+    except StreamNotFoundError as exc:
+        await db.rollback()
+        raise StreamConfigNotFoundError(exc.message) from exc
     except StreamRepositoryError as exc:
         await db.rollback()
         raise StreamConfigError(exc.message) from exc
-    logger.info("Stream updated", extra={"stream": name})
+    logger.info(
+        "Stream updated",
+        extra={
+            "stream": name,
+            "crop_enabled": model.crop_enabled,
+            "crop_top_percent": model.crop_top_percent,
+            "crop_bottom_percent": model.crop_bottom_percent,
+        },
+    )
     return _to_schema(model)
 
 
@@ -105,12 +164,15 @@ async def delete_stream(db: AsyncSession, name: str) -> None:
         name: Stream name to delete.
 
     Raises:
-        StreamConfigError: If stream does not exist.
+        StreamConfigNotFoundError: If the stream does not exist.
     """
     repo = StreamRepository(db)
     try:
         await repo.delete(name)
         await db.commit()
+    except StreamNotFoundError as exc:
+        await db.rollback()
+        raise StreamConfigNotFoundError(exc.message) from exc
     except StreamRepositoryError as exc:
         await db.rollback()
         raise StreamConfigError(exc.message) from exc
@@ -145,6 +207,9 @@ def _to_schema(model: Stream) -> StreamConfig:
         name=model.name,
         source=model.source,
         record_enabled=model.record_enabled,
+        crop_enabled=model.crop_enabled,
+        crop_top_percent=model.crop_top_percent,
+        crop_bottom_percent=model.crop_bottom_percent,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )

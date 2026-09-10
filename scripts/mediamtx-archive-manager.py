@@ -24,6 +24,15 @@ RECORDINGS_PATH = os.getenv("RECORDINGS_PATH", "/recordings")
 MAX_AGE_DAYS = int(os.getenv("MAX_AGE_DAYS", "7"))
 MAX_SIZE_GB = int(os.getenv("MAX_SIZE_GB", "50"))
 
+# A file written to more recently than this is still being appended to and must
+# not be uploaded: MediaMTX writes the open segment every ``recordPartDuration``
+# (1 s), and recording-optimizer replaces a segment in place once it closes.
+# Uploading either mid-write ships a truncated file to S3 and then deletes the
+# local copy, which is unrecoverable. Same default as
+# ``TACITUS_OPT_MIN_IDLE_SECONDS`` so the two services agree on what "closed"
+# means.
+MIN_IDLE_SECONDS = int(os.getenv("MIN_IDLE_SECONDS", "300"))
+
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
@@ -43,11 +52,27 @@ def get_s3_client():
 
 
 def list_files(base: Path):
+    """Collect the recordings that are safe to archive.
+
+    Two kinds of file are deliberately invisible here:
+
+    * anything whose name starts with a dot -- recording-optimizer writes its
+      transcode to ``.<name>.tacitus.tmp`` beside the segment it is rewriting,
+      and a half-finished transcode must never reach S3;
+    * anything touched within ``MIN_IDLE_SECONDS`` -- see that constant.
+
+    Returns:
+        List of ``(path, mtime, size)`` tuples for closed, complete files.
+    """
     files = []
+    cutoff = time.time() - MIN_IDLE_SECONDS
     for item in base.rglob("*"):
-        if item.is_file():
-            stat = item.stat()
-            files.append((item, stat.st_mtime, stat.st_size))
+        if not item.is_file() or item.name.startswith("."):
+            continue
+        stat = item.stat()
+        if stat.st_mtime > cutoff:
+            continue
+        files.append((item, stat.st_mtime, stat.st_size))
     return files
 
 

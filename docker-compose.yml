@@ -193,6 +193,10 @@ services:
       - RECORDINGS_PATH=/recordings
       - MAX_AGE_DAYS=${TACITUS_MTX_MAX_AGE_DAYS:-7}
       - MAX_SIZE_GB=${TACITUS_MTX_MAX_SIZE_GB:-50}
+      # Тот же порог «сегмент закрыт», что у recording-optimizer: файл, который
+      # MediaMTX ещё дописывает или обработчик прямо сейчас подменяет, не
+      # должен уехать в S3 и быть удалённым локально.
+      - MIN_IDLE_SECONDS=${TACITUS_OPT_MIN_IDLE_SECONDS:-300}
       - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
@@ -216,6 +220,126 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  recording-optimizer:
+    # Прореживание статичных кадров: декодирует закрытые сегменты записи,
+    # выбрасывает кадры, не отличающиеся от предыдущего (фильтр ffmpeg
+    # mpdecimate), и кладёт результат на место оригинала — до того, как
+    # mediamtx-cleanup выгрузит его в S3. Подробности и замеры — в шапке
+    # scripts/optimize-recordings.sh, обоснование — ADR-015.
+    #
+    # Тот же образ, что у mediamtx и stream-simulator: в нём уже есть ffmpeg
+    # 6.1.2 с avfilter (то есть с mpdecimate) и ffprobe. Тащить ffmpeg в
+    # tacitus-app нельзя — на этом образе работает и API, и mediamtx-cleanup
+    # (образ приложения несёт boto3, см. tests/test_compose_pinning.py).
+    # Entrypoint образа (/mediamtx) переопределён — иначе контейнер поднял бы
+    # второй RTSP-сервер вместо обработчика.
+    image: bluenviron/mediamtx:1.15.1-ffmpeg
+    container_name: tacitus-recording-optimizer
+    entrypoint: ["/bin/sh", "/optimize-recordings.sh"]
+    restart: unless-stopped
+    read_only: true
+    user: "1000:1000"
+    # Профиля здесь намеренно НЕТ, в отличие от stream-simulator: сервис обязан
+    # работать в production, а Ansible вызывает compose без --profile. Роль
+    # выключателя играет TACITUS_OPT_ENABLED, и по умолчанию он `false`: у
+    # развёрнутых инсталляций этой переменной в .env нет, и обновление стека не
+    # должно внезапно начать жечь CPU на перекодировке архива.
+    #
+    # env_file тоже нет: обработчику записей незачем видеть TACITUS_JWT_SECRET,
+    # пароль БД и ключи S3 — он не ходит ни в базу, ни в хранилище.
+    environment:
+      - TACITUS_OPT_ENABLED=${TACITUS_OPT_ENABLED:-false}
+      - TACITUS_OPT_INTERVAL_SECONDS=${TACITUS_OPT_INTERVAL_SECONDS:-600}
+      - TACITUS_OPT_MIN_IDLE_SECONDS=${TACITUS_OPT_MIN_IDLE_SECONDS:-300}
+      - TACITUS_OPT_CRF=${TACITUS_OPT_CRF:-18}
+      - TACITUS_OPT_PRESET=${TACITUS_OPT_PRESET:-slow}
+      - TACITUS_OPT_HI=${TACITUS_OPT_HI:-768}
+      - TACITUS_OPT_LO=${TACITUS_OPT_LO:-320}
+      - TACITUS_OPT_FRAC=${TACITUS_OPT_FRAC:-0.33}
+      - TACITUS_OPT_MIN_GAIN_PERCENT=${TACITUS_OPT_MIN_GAIN_PERCENT:-10}
+      - TACITUS_OPT_NICE=${TACITUS_OPT_NICE:-10}
+    volumes:
+      # rw, в отличие от симулятора: сервис подменяет сегменты на месте.
+      - ./recordings:/recordings
+      - ./scripts/optimize-recordings.sh:/optimize-recordings.sh:ro
+    tmpfs:
+      # Корень смонтирован ro. Временный файл транскода лежит РЯДОМ с записью,
+      # а не здесь: подмена делается через mv, а он атомарен только в пределах
+      # одной файловой системы. /tmp нужен ffmpeg под служебные буферы.
+      - /tmp
+    networks:
+      - tacitus-network
+    # Healthcheck не объявлен: образ своего не несёт, а «жив ли обработчик» —
+    # это вопрос к логу (строка обхода) и к размеру каталога записей, а не к
+    # состоянию процесса, который 99% времени спит.
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          # Перекодировка — единственная тяжёлая по CPU работа в стеке. Лимит
+          # отдельный и щедрый, потому что контейнер изолирован: MediaMTX
+          # ограничен своим '1.0' и приём потока обработчик не задушит. Внутри
+          # ffmpeg дополнительно запускается под nice.
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  video-processor:
+    # Обрезка записанных сегментов: срезает заданную для потока долю кадра
+    # сверху и снизу и кладёт результат на место оригинала. Перекодирования
+    # нет — переписывается только conformance window в SPS, поэтому работа
+    # сводится к ремуксу. Подробности — в шапке scripts/video-crop-worker.py.
+    #
+    # Собственный образ, а не tacitus-app: на образе приложения работают API
+    # (с read_only) и ещё два сервиса, которым ffmpeg не нужен. И не образ
+    # mediamtx: там есть ffmpeg, но нет ни python, ни моделей, а настройки
+    # обрезки лежат в таблице streams.
+    build:
+      context: .
+      dockerfile: Dockerfile.video-processor
+    image: tacitus-video-processor:0.1.0
+    container_name: tacitus-video-processor
+    restart: unless-stopped
+    user: "1000:1000"
+    # env_file намеренно нет, как и у recording-optimizer: обработчику записей
+    # незачем видеть TACITUS_JWT_SECRET и ключи S3. Строка подключения к БД
+    # передаётся явно — она единственный секрет, который сервису действительно
+    # нужен, потому что настройки обрезки он читает из streams.
+    environment:
+      - RECORDINGS_PATH=/recordings
+      - TACITUS_DATABASE_URL=${TACITUS_DATABASE_URL:-postgresql+asyncpg://tacitus:tacitus@postgres:5432/tacitus}
+      - CROP_INTERVAL_SECONDS=${TACITUS_CROP_INTERVAL_SECONDS:-300}
+      # Тот же порог «сегмент закрыт», что у recording-optimizer и архиватора.
+      - MIN_IDLE_SECONDS=${TACITUS_OPT_MIN_IDLE_SECONDS:-300}
+      - CROP_NICE=${TACITUS_CROP_NICE:-10}
+      - CROP_FFMPEG_TIMEOUT_SECONDS=${TACITUS_CROP_FFMPEG_TIMEOUT_SECONDS:-3600}
+    volumes:
+      # rw: сервис подменяет сегменты на месте.
+      - ./recordings:/recordings
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
+    networks:
+      - tacitus-network
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          # Ремукс упирается в диск, а не в процессор: обрезка часового
+          # сегмента — это его перезапись, а не перекодировка. Лимит скромный
+          # намеренно, плюс ffmpeg внутри запускается под nice.
           cpus: '0.5'
           memory: 256M
         reservations:

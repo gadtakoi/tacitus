@@ -79,13 +79,17 @@ def test_size_cleanup_deletes_oldest_when_over_limit(
     fake = _FakeS3Client()
     monkeypatch.setattr(archive_manager, "get_s3_client", lambda: fake)
 
+    # All three are past MIN_IDLE_SECONDS: this test is about ordering by age,
+    # and a file younger than that threshold is invisible to the archiver by
+    # design (MediaMTX may still be writing it). That case has its own test,
+    # test_size_cleanup_leaves_the_active_segment_alone.
     now = time.time()
     oldest = tmp_path / "cam1" / "oldest.mp4"
     middle = tmp_path / "cam1" / "middle.mp4"
     newest = tmp_path / "cam1" / "newest.mp4"
-    _make_file(oldest, 10_000_000, now - 2000)
-    _make_file(middle, 10_000_000, now - 1000)
-    _make_file(newest, 10_000_000, now)
+    _make_file(oldest, 10_000_000, now - 3000)
+    _make_file(middle, 10_000_000, now - 2000)
+    _make_file(newest, 10_000_000, now - 1000)
 
     # limit 20 MB -> need to remove at least one file
     monkeypatch.setattr(archive_manager, "MAX_SIZE_GB", 0.02)
@@ -130,3 +134,54 @@ def test_missing_recordings_path_is_noop(
     # should log warning and return without error
     archive_manager.main()
     assert fake.uploaded == []
+
+
+def test_optimizer_temporary_files_are_never_uploaded(
+    archive_manager: ModuleType, tmp_path: Path
+) -> None:
+    """A transcode in progress must not reach S3.
+
+    recording-optimizer writes ``.<name>.tacitus.tmp`` beside the segment it is
+    rewriting. Uploading that file would ship a truncated video and then delete
+    the local original, which nothing can undo.
+    """
+    old = time.time() - 10 * 86400
+    _make_file(tmp_path / "cam1" / "segment.mp4", 100, old)
+    _make_file(tmp_path / "cam1" / ".segment.mp4.tacitus.tmp", 100, old)
+
+    found = {path.name for path, _, _ in archive_manager.list_files(tmp_path)}
+
+    assert found == {"segment.mp4"}
+
+
+def test_freshly_written_files_are_never_uploaded(
+    archive_manager: ModuleType, tmp_path: Path
+) -> None:
+    """The segment MediaMTX is still appending to stays on disk.
+
+    ``recordPartDuration`` is one second, so the open segment changes constantly.
+    Age-based cleanup could never pick it, but size-based cleanup sorts by mtime
+    and, on a full disk, would eventually reach it — upload it half-written and
+    delete the local copy.
+    """
+    _make_file(tmp_path / "cam1" / "active.mp4", 100, time.time())
+
+    assert archive_manager.list_files(tmp_path) == []
+
+
+def test_size_cleanup_leaves_the_active_segment_alone(
+    archive_manager: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even over the size limit, the file being written is not archived."""
+    fake = _FakeS3Client()
+    monkeypatch.setattr(archive_manager, "get_s3_client", lambda: fake)
+    monkeypatch.setattr(archive_manager, "MAX_SIZE_GB", 0)
+
+    _make_file(tmp_path / "cam1" / "active.mp4", 1024, time.time())
+    _make_file(tmp_path / "cam1" / "closed.mp4", 1024, time.time() - 10 * 86400)
+
+    archive_manager.main()
+
+    uploaded = {Path(name).name for name, _ in fake.uploaded}
+    assert uploaded == {"closed.mp4"}
+    assert (tmp_path / "cam1" / "active.mp4").exists()

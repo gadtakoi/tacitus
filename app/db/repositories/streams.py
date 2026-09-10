@@ -18,6 +18,14 @@ class StreamRepositoryError(Exception):
         super().__init__(message)
 
 
+class StreamNotFoundError(StreamRepositoryError):
+    """The requested stream does not exist."""
+
+
+class StreamAlreadyExistsError(StreamRepositoryError):
+    """A stream with the requested name already exists."""
+
+
 class StreamRepository:
     """Repository for Stream CRUD operations."""
 
@@ -34,18 +42,21 @@ class StreamRepository:
             Created Stream model instance.
 
         Raises:
-            StreamRepositoryError: If stream name already exists.
+            StreamAlreadyExistsError: If stream name already exists.
         """
         stream = Stream(
             name=request.name,
             source=request.source,
             record_enabled=request.record_enabled,
+            crop_enabled=request.crop_enabled,
+            crop_top_percent=request.crop_top_percent,
+            crop_bottom_percent=request.crop_bottom_percent,
         )
         self._session.add(stream)
         try:
             await self._session.flush()
         except IntegrityError as exc:
-            raise StreamRepositoryError(f"Stream '{request.name}' already exists") from exc
+            raise StreamAlreadyExistsError(f"Stream '{request.name}' already exists") from exc
         return stream
 
     async def get_by_name(self, name: str) -> Stream | None:
@@ -80,16 +91,22 @@ class StreamRepository:
             Updated Stream instance.
 
         Raises:
-            StreamRepositoryError: If stream not found.
+            StreamNotFoundError: If stream not found.
         """
         stream = await self.get_by_name(name)
         if not stream:
-            raise StreamRepositoryError(f"Stream '{name}' not found")
+            raise StreamNotFoundError(f"Stream '{name}' not found")
 
         if request.source is not None:
             stream.source = request.source
         if request.record_enabled is not None:
             stream.record_enabled = request.record_enabled
+        if request.crop_enabled is not None:
+            stream.crop_enabled = request.crop_enabled
+        if request.crop_top_percent is not None:
+            stream.crop_top_percent = request.crop_top_percent
+        if request.crop_bottom_percent is not None:
+            stream.crop_bottom_percent = request.crop_bottom_percent
 
         stream.updated_at = datetime.now(UTC)
         await self._session.flush()
@@ -102,10 +119,10 @@ class StreamRepository:
             name: Stream name to delete.
 
         Raises:
-            StreamRepositoryError: If stream not found.
+            StreamNotFoundError: If stream not found.
         """
         stream = await self.get_by_name(name)
         if not stream:
-            raise StreamRepositoryError(f"Stream '{name}' not found")
+            raise StreamNotFoundError(f"Stream '{name}' not found")
         await self._session.delete(stream)
         await self._session.flush()

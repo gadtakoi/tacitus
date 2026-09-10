@@ -127,6 +127,13 @@ pytest tests/ --cov=app --cov-report=term-missing
 | `TACITUS_MTX_RTSP_PORT`                               | `8554`       | `mediamtx` (RTSP-порт и healthcheck)    |
 | `TACITUS_MTX_MAX_AGE_DAYS`                            | `7`          | `mediamtx-cleanup`                      |
 | `TACITUS_MTX_MAX_SIZE_GB`                             | `50`         | `mediamtx-cleanup`                      |
+| `TACITUS_CROP_INTERVAL_SECONDS`                       | `300`        | `video-processor`                       |
+| `TACITUS_CROP_NICE`                                   | `10`         | `video-processor`                       |
+| `TACITUS_CROP_FFMPEG_TIMEOUT_SECONDS`                 | `3600`       | `video-processor`                       |
+
+> ℹ️ Насколько резать кадр — настройка **потока**, а не сервиса: она лежит в
+> таблице `streams` и правится через `/stream-configs` или страницу «Потоки»
+> веб-интерфейса. По умолчанию обрезка выключена у всех потоков.
 
 > ⚠️ Задавать S3-ключи как `TACITUS_S3_ACCESS_KEY` в `.env` **бесполезно**:
 > блок `environment:` в compose перекрывает `env_file:` значением

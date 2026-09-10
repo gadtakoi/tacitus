@@ -120,6 +120,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     const error = await response.text();
     throw new Error(`HTTP ${response.status}: ${error}`);
   }
+  // 204 carries no body, and response.json() would throw on it. DELETE
+  // /stream-configs/{name} is the only such route today.
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -174,6 +179,55 @@ export const filesApi = {
     }),
   stats: () => apiFetch<StatsResponse>("/files/stats"),
 };
+
+export interface StreamConfig {
+  name: string;
+  source: string;
+  record_enabled: boolean;
+  crop_enabled: boolean;
+  crop_top_percent: number;
+  crop_bottom_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type StreamConfigUpdate = Partial<
+  Pick<
+    StreamConfig,
+    "source" | "record_enabled" | "crop_enabled" | "crop_top_percent" | "crop_bottom_percent"
+  >
+>;
+
+export type StreamConfigCreate = StreamConfigUpdate & { name: string };
+
+/**
+ * Stream configuration stored by Tacitus, as opposed to the live MediaMTX view
+ * under /streams. Creating a configuration here does not provision a MediaMTX
+ * path: which streams exist is decided by the MediaMTX configuration file.
+ */
+export const streamConfigsApi = {
+  list: () => apiFetch<StreamConfig[]>("/stream-configs"),
+  get: (name: string) =>
+    apiFetch<StreamConfig>(`/stream-configs/${encodeURIComponent(name)}`),
+  create: (payload: StreamConfigCreate) =>
+    apiFetch<StreamConfig>("/stream-configs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  update: (name: string, payload: StreamConfigUpdate) =>
+    apiFetch<StreamConfig>(`/stream-configs/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  remove: (name: string) =>
+    apiFetch<void>(`/stream-configs/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+};
+
+/** Mirrors MAX_CROP_PERCENT / MAX_CROP_TOTAL_PERCENT in app/schemas/streams.py. */
+export const MAX_CROP_PERCENT = 90;
+export const MAX_CROP_TOTAL_PERCENT = 90;
 
 export const authApi = {
   login: (username: string, password: string) =>

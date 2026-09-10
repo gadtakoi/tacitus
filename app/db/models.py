@@ -12,9 +12,11 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -47,6 +49,14 @@ class Stream(Base):
     source: Mapped[str] = mapped_column(String(512), nullable=False, default="publisher")
     # Whether recording/archive cleanup is enabled for this stream.
     record_enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # Whether recorded segments of this stream are cropped after recording.
+    crop_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Share of the visible frame height removed from the top, in percent.
+    # Percent rather than pixels: the setting then survives a camera being
+    # swapped for one of a different resolution.
+    crop_top_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Share of the visible frame height removed from the bottom, in percent.
+    crop_bottom_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Timestamp when the record was created (UTC).
     # ``timezone=True`` keeps the column TIMESTAMPTZ, matching the original
     # Alembic migration; without it SQLAlchemy would emit plain TIMESTAMP
@@ -64,7 +74,25 @@ class Stream(Base):
         nullable=False,
     )
 
-    __table_args__ = (UniqueConstraint("name", name="uq_stream_name"),)
+    # The percentage bounds are repeated here on purpose. Pydantic guards the
+    # HTTP boundary, but the crop worker reaches this table directly, and a
+    # crop that leaves nothing of the frame cannot be undone once the original
+    # segment has been replaced.
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_stream_name"),
+        CheckConstraint(
+            "crop_top_percent >= 0 AND crop_top_percent <= 90",
+            name="ck_stream_crop_top_percent",
+        ),
+        CheckConstraint(
+            "crop_bottom_percent >= 0 AND crop_bottom_percent <= 90",
+            name="ck_stream_crop_bottom_percent",
+        ),
+        CheckConstraint(
+            "crop_top_percent + crop_bottom_percent <= 90",
+            name="ck_stream_crop_total_percent",
+        ),
+    )
 
 
 class User(Base):

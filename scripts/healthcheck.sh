@@ -32,6 +32,7 @@ tacitus-redis:health
 tacitus-minio:health
 tacitus-mediamtx:health
 tacitus-mediamtx-cleanup:nohealth
+tacitus-recording-optimizer:nohealth
 "
 
 # Контейнеры-однократки: отработали и завершились с кодом 0.

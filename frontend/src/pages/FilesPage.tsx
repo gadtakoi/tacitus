@@ -54,9 +54,12 @@ function FilesPage() {
         }}
       >
         <h1>Tacitus</h1>
-        <button onClick={handleLogout}>
-          Logout{username ? ` (${username})` : ""}
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button onClick={() => navigate("/streams")}>Потоки</button>
+          <button onClick={handleLogout}>
+            Logout{username ? ` (${username})` : ""}
+          </button>
+        </div>
       </header>
       <FileManager />
     </div>
