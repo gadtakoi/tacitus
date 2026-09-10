@@ -394,6 +394,48 @@ ALLOWED_TYPES = {
   чувствительных: иначе новое поле с секретом начнёт течь в день его
   добавления.
 
+### 4.4 Скрытие версий ПО
+
+Точная версия компонента сообщает анонимному клиенту, какие опубликованные
+уязвимости имеет смысл пробовать. Снаружи доступен только nginx (80/443 —
+единственные порты, опубликованные на `0.0.0.0`), поэтому закрываются четыре
+канала, проходящие через него:
+
+| Канал | Что раскрывал | Решение |
+|---|---|---|
+| Заголовок `Server` | `nginx/1.27.5` | `server_tokens off` в `nginx/nginx.conf` и в `nginx-ssl.conf.j2` |
+| Подвал штатных страниц ошибок nginx | `nginx/1.27.5` | `error_page` → собственная страница `/error.html` |
+| `GET /api/openapi.json`, `/api/docs`, `/api/redoc` | `info.version` и вся поверхность API, анонимно | в production `docs_url`, `redoc_url` и `openapi_url` равны `None` |
+| `/assets/*.map` | исходники фронтенда и версии зависимостей | `sourcemap: false` в сборке Vite |
+
+**Заголовок `Server`.** `server_tokens off` убирает номер версии, но не слово
+`nginx`. Полное удаление заголовка требует пересборки nginx с модулем
+`headers-more` (`more_clear_headers Server`); образ сознательно остаётся
+стоковым `nginx:alpine`, поэтому принято скрытие версии, а не факта.
+
+**Страницы ошибок.** `server_tokens off` вычищает версию и из подвала штатных
+страниц, но имя сервера там остаётся, поэтому страницы заменены целиком.
+Перехват касается только тех кодов, которые nginx формирует сам;
+`proxy_intercept_errors` выключен, и JSON-ответы приложения проходят без
+подмены.
+
+**Интерактивная документация.** nginx проксирует `/api/` на корень приложения
+(`proxy_pass http://app:8000/;` с завершающим слэшем), поэтому дефолтные
+`/docs`, `/redoc` и `/openapi.json` FastAPI отвечали снаружи без
+аутентификации — то есть версия уходила анонимному клиенту мимо
+`GET /settings/version`, который держит её за токеном. Решение принимает
+`app/core/config.py::api_docs_enabled()`; все три URL гасятся одним условием,
+потому что оставить `openapi_url` при выключенном `docs_url` — значит спрятать
+просмотрщик, а не документ. Вне production документация работает как прежде.
+
+Единственный канал получения версии снаружи — `GET /settings/version`
+(аутентификация, 60/мин). Регрессионные тесты — `tests/test_nginx_security.py`
+и `tests/test_api_docs_exposure.py`.
+
+Не затрагиваются компоненты, недоступные снаружи по топологии: Control API
+MediaMTX (только внутренняя сеть), MinIO (порты не публикуются вовсе),
+PostgreSQL и Redis. RTSP по умолчанию слушает loopback.
+
 ---
 
 ## 5. Secrets Management
@@ -651,6 +693,9 @@ python scripts/generate-sbom.py
 - [x] `.env` недоступен через nginx (`location /.env { deny all; }`)
 - [x] MinIO console (порт 9001) не экспонируется наружу в `docker-compose.yml`
 - [x] Security headers проверены через unit-тесты nginx-конфигурации
+- [x] Версия nginx не раскрывается ни в заголовке `Server`, ни в теле страниц ошибок (`server_tokens off` + `error_page`)
+- [x] `/api/openapi.json`, `/api/docs` и `/api/redoc` недоступны в production
+- [x] Source maps фронтенда не попадают в образ (`sourcemap: false`)
 
 ---
 
@@ -681,7 +726,7 @@ python scripts/generate-sbom.py
 
 ## 11. Deployment Security Checklist
 
-- [ ] `TACITUS_ENVIRONMENT=production`
+- [ ] `TACITUS_ENVIRONMENT=production` — этим же значением выключается интерактивная документация API
 - [ ] `TACITUS_DEBUG=false`
 - [ ] `TACITUS_JWT_SECRET` — минимум 32 символа, не дефолт
 - [ ] MediaMTX credentials (`mediamtx_publish_password`, `mediamtx_read_password`,

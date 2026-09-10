@@ -109,3 +109,19 @@ def validate_startup_settings() -> None:
         if "*" in origins:
             msg = "Wildcard CORS origin (*) is not allowed in production"
             raise RuntimeError(msg)
+
+
+def api_docs_enabled() -> bool:
+    """Whether the interactive API documentation is served.
+
+    Swagger, ReDoc and the OpenAPI document describe the whole API surface —
+    including the running version — and none of them requires authentication.
+    nginx proxies ``/api/`` onto the application root, so in a deployed stack
+    they are reachable from outside as ``/api/docs`` and ``/api/openapi.json``,
+    which would hand out the version that ``GET /settings/version`` deliberately
+    keeps behind a token. Outside production they are worth more than they cost.
+
+    Returns:
+        ``True`` unless the process runs in the production environment.
+    """
+    return settings.environment != "production"

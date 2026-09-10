@@ -15,7 +15,7 @@ from app.api.routers.files import router as files_router
 from app.api.routers.settings import router as settings_router
 from app.api.routers.stream_configs import router as stream_configs_router
 from app.api.routers.streams import router as streams_router
-from app.core.config import settings, validate_startup_settings
+from app.core.config import api_docs_enabled, settings, validate_startup_settings
 from app.core.exceptions import (
     AppError,
     app_exception_handler,
@@ -45,7 +45,19 @@ logging.getLogger(__name__).info(
     settings.environment,
 )
 
-app = FastAPI(title=settings.app_name, version=__version__)
+# Swagger, ReDoc and the OpenAPI document are anonymous, and nginx proxies
+# /api/ onto the application root, so in a deployed stack they answer at
+# /api/docs and /api/openapi.json. All three are gated by the same call: leaving
+# openapi_url on while clearing docs_url hides the viewer, not the document —
+# and the document is what carries the version and the full API surface.
+_docs_enabled = api_docs_enabled()
+app = FastAPI(
+    title=settings.app_name,
+    version=__version__,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 app.state.limiter = limiter
 # Starlette wraps middleware in reverse order of registration: the one added
 # last ends up outermost. The order below therefore reads inside-out, and the

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Tacitus</title>
+    <!--
+      Substitute for the reverse proxy's built-in error pages, which are signed
+      with the name of the server software. Everything in this file is served to
+      the client, comments included, so nothing here names a component or says
+      what failed: the status line already carries the code, and anything beyond
+      it is a hint for whoever is probing. Static and script-free so it renders
+      under the site's CSP. Rationale: docs/security.md, §4.4.
+    -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #242424;
+        color: #c9c9c9;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        text-align: center;
+        padding: 1rem;
+      }
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        color: #909296;
+      }
+      a {
+        color: #c9c9c9;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Tacitus</h1>
+      <p>The request could not be completed.</p>
+      <a href="/">Back to the application</a>
+    </main>
+  </body>
+</html>

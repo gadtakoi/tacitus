@@ -78,3 +78,31 @@ def test_env_file_denied(conf_file: Path) -> None:
     content = conf_file.read_text()
     assert "location /.env {" in content
     assert "deny all" in content
+
+
+@pytest.mark.parametrize("conf_file", [NGINX_CONF, NGINX_SSL_CONF])
+def test_server_tokens_disabled(conf_file: Path) -> None:
+    """Verify that nginx does not advertise its version.
+
+    Without the directive nginx defaults to ``server_tokens on`` and puts the
+    exact build into every ``Server`` header and into the footer of every error
+    page it generates, which narrows down the published vulnerabilities worth
+    trying against it.
+    """
+    content = conf_file.read_text()
+    assert "server_tokens off;" in content
+
+
+@pytest.mark.parametrize("conf_file", [NGINX_CONF, NGINX_SSL_CONF])
+def test_nginx_errors_use_custom_page(conf_file: Path) -> None:
+    """Verify that nginx serves its own error page instead of the stock one.
+
+    ``server_tokens off`` strips the version from the stock page but leaves the
+    server name in its footer, so the page itself is replaced. The location is
+    ``internal`` because the page is a substitute for an error, not a route.
+    """
+    content = conf_file.read_text()
+    assert re.search(r"error_page[^;]*\s/error\.html;", content)
+    location = re.search(r"location = /error\.html \{(.*?)\}", content, re.DOTALL)
+    assert location, "no location block serving the custom error page"
+    assert "internal;" in location.group(1)

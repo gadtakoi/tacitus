@@ -32,7 +32,11 @@ export default defineConfig({
 
     build: {
         outDir: "dist",
-        sourcemap: true,
+        // Source maps ship inside the nginx image and are served from / next to
+        // the bundle, handing any visitor the full frontend source and the
+        // dependency tree it was built from. Nothing consumes them: Sentry is
+        // wired on the backend only (app/core/sentry.py).
+        sourcemap: false,
         target: "es2022",
         emptyOutDir: true,
     },
