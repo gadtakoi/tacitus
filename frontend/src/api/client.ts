@@ -295,6 +295,12 @@ export interface SettingsResponse {
   items: SettingItem[];
 }
 
+/** Version of the running backend, as reported by GET /settings/version. */
+export interface VersionResponse {
+  version: string;
+}
+
 export const settingsApi = {
   list: () => apiFetch<SettingsResponse>("/settings"),
+  version: () => apiFetch<VersionResponse>("/settings/version"),
 };

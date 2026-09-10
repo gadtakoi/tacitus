@@ -1,4 +1,4 @@
-"""Tests for the runtime configuration view (``GET /settings``).
+"""Tests for the runtime configuration router (``/settings``).
 
 The endpoint exists to answer "which environment variables is this process
 running with?" from the browser. Its whole risk is disclosure, so most of what
@@ -16,6 +16,7 @@ import json
 import pytest
 from httpx import AsyncClient
 
+from app import __version__
 from app.core.config import Settings, settings
 from app.services import settings_service
 from app.services.settings_service import _redact_url_credentials, list_settings
@@ -174,3 +175,34 @@ class TestEndpoint:
             secret = str(getattr(settings, field))
             if secret:
                 assert secret not in response.text, field
+
+
+class TestVersionEndpoint:
+    """HTTP contract of ``GET /settings/version``."""
+
+    async def test_anonymous_access_is_rejected(self, client: AsyncClient) -> None:
+        # The exact build number is what an attacker matches against published
+        # vulnerabilities; it stays behind authentication.
+        response = await client.get("/settings/version")
+        assert response.status_code == 401
+
+    async def test_invalid_token_is_rejected(self, client: AsyncClient) -> None:
+        response = await client.get("/settings/version", headers={"Authorization": "Bearer nope"})
+        assert response.status_code == 401
+
+    async def test_returns_the_running_version(self, client: AsyncClient) -> None:
+        token = await _token(client, "version_reader")
+        response = await client.get(
+            "/settings/version", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"version": __version__}
+
+    async def test_response_carries_nothing_but_the_version(self, client: AsyncClient) -> None:
+        # A version endpoint is a tempting place to bolt on build paths, host
+        # names or the environment; the schema keeps it to one field.
+        token = await _token(client, "version_shape")
+        response = await client.get(
+            "/settings/version", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert set(response.json()) == {"version"}

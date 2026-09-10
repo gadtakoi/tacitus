@@ -14,6 +14,7 @@ frontend/src/
 ├── api/
 │   └── client.ts            # API клиент с JWT injection
 ├── components/              # React компоненты
+│   └── AppHeader.tsx        # Общая шапка: версия сервиса, навигация, выход
 ├── pages/                   # Страницы (login, file manager)
 └── App.tsx                  # Root компонент
 ```
@@ -24,6 +25,12 @@ frontend/src/
 - Автоматически добавляет `Authorization: Bearer <token>` из `localStorage`
 - `authApi.login()` / `authApi.register()` — отправляют JSON body
 - `filesApi.list()` / `upload()` / `getUrl()` / `delete()`
+- `settingsApi.list()` / `version()` — конфигурация и версия сервиса
+
+`AppHeader` запрашивает `settingsApi.version()` при монтировании и показывает
+результат рядом с названием. Отказ запроса не обрабатывается как ошибка:
+версия просто не отображается — шапка нужна для навигации и выхода, и падать
+из-за справочного числа она не должна.
 
 ## Сборка
 

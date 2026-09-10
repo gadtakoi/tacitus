@@ -19,6 +19,12 @@ http {
     tcp_nodelay on;
     keepalive_timeout 65;
 
+    # The exact nginx version tells an anonymous caller which published
+    # vulnerabilities are worth trying. This drops it from the Server header and
+    # from the footer of nginx's own error pages. The bare word "nginx" stays in
+    # the header: removing it needs a build with the headers-more module.
+    server_tokens off;
+
     # Security headers
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
@@ -50,6 +56,19 @@ http {
         client_max_body_size 11M;
         client_body_timeout 30s;
         client_header_timeout 10s;
+
+        # nginx signs the pages it generates itself (404 from the /.env deny
+        # below, 413 over client_max_body_size, 502/504 when app is down).
+        # Errors the application returns are untouched: proxy_intercept_errors
+        # is off by default, so its JSON bodies pass through as they are. The
+        # :80 server above only redirects and serves the ACME challenge, so
+        # server_tokens alone covers it.
+        error_page 400 401 403 404 405 408 413 414 429 500 502 503 504 /error.html;
+
+        location = /error.html {
+            root /usr/share/nginx/html;
+            internal;
+        }
 
         location /.env {
             deny all;

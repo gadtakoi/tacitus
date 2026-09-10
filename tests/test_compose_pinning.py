@@ -15,8 +15,13 @@ from pathlib import Path
 
 import yaml
 
+from app import __version__
+
 COMPOSE_FILE = Path("docker-compose.yml")
-APP_IMAGE = "tacitus-app:0.1.0"
+# The tag of a locally built image is the application version; keeping the
+# literal here made this file one more place to remember on a version bump.
+# ``tests/test_version_consistency.py`` guards the compose tags themselves.
+APP_IMAGE = f"tacitus-app:{__version__}"
 
 # Any pip install, pinned or not. Nothing in compose should install at runtime.
 _PIP_INSTALL = re.compile(r"pip\s+install\b")

@@ -49,6 +49,8 @@ Nginx добавляет следующие security headers ко всем от�
 | `DELETE /files/{filename}` | 10/мин | пользователь |
 | `GET /streams`           | 60/мин | пользователь |
 | `GET /streams/{path}`    | 60/мин | пользователь |
+| `GET /settings`          | 30/мин | пользователь |
+| `GET /settings/version`  | 60/мин | пользователь |
 
 Ключ везде вычисляет одна и та же функция `get_user_or_ip`. Для
 `register`/`login`/`refresh` она на практике даёт IP просто потому, что в этих

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AppHeader from "../components/AppHeader";
 import SettingsViewer from "../components/SettingsViewer";
 import { authApi, clearTokens, hasTokens, setSessionExpiredHandler } from "../api/client";
 
@@ -41,24 +42,7 @@ function SettingsPage() {
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 20px",
-          borderBottom: "1px solid #ccc",
-        }}
-      >
-        <h1>Tacitus</h1>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button onClick={() => navigate("/files")}>Файлы</button>
-          <button onClick={() => navigate("/streams")}>Потоки</button>
-          <button onClick={handleLogout}>
-            Logout{username ? ` (${username})` : ""}
-          </button>
-        </div>
-      </header>
+      <AppHeader username={username} onLogout={handleLogout} />
       <SettingsViewer />
     </div>
   );

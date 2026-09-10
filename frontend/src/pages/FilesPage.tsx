@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AppHeader from "../components/AppHeader";
 import FileManager from "../components/FileManager";
 import { authApi, clearTokens, hasTokens, setSessionExpiredHandler } from "../api/client";
 
@@ -44,24 +45,7 @@ function FilesPage() {
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 20px",
-          borderBottom: "1px solid #ccc",
-        }}
-      >
-        <h1>Tacitus</h1>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button onClick={() => navigate("/streams")}>Потоки</button>
-          <button onClick={() => navigate("/settings")}>Параметры</button>
-          <button onClick={handleLogout}>
-            Logout{username ? ` (${username})` : ""}
-          </button>
-        </div>
-      </header>
+      <AppHeader username={username} onLogout={handleLogout} />
       <FileManager />
     </div>
   );

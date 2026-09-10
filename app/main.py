@@ -1,5 +1,7 @@
 """FastAPI application entrypoint."""
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from app import __version__
 from app.api.routers.auth import router as auth_router
 from app.api.routers.files import router as files_router
 from app.api.routers.settings import router as settings_router
@@ -32,7 +35,17 @@ setup_logging()
 validate_startup_settings()
 init_sentry()
 
-app = FastAPI(title=settings.app_name)
+# The build a container runs is otherwise invisible: images are built on the
+# deployment host, so an operator comparing behaviour across environments has
+# nothing to compare but this line.
+logging.getLogger(__name__).info(
+    "Starting %s %s in %s environment",
+    settings.app_name,
+    __version__,
+    settings.environment,
+)
+
+app = FastAPI(title=settings.app_name, version=__version__)
 app.state.limiter = limiter
 # Starlette wraps middleware in reverse order of registration: the one added
 # last ends up outermost. The order below therefore reads inside-out, and the
