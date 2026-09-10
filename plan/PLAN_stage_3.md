@@ -6,48 +6,48 @@
 
 - [x] Проверить все модули в `app/` на наличие module docstrings (`__init__.py`, `.py` файлы)
 - [x] Проверить все публичные классы:
-  - [x] `Settings`
-  - [x] `S3Service`
-  - [x] `HelloService`
-  - [x] `AuthError`
-  - [x] `RequestIdFilter`
-  - [x] `RequestIdMiddleware`
+    - [x] `Settings`
+    - [x] `S3Service`
+    - [x] `HelloService`
+    - [x] `AuthError`
+    - [x] `RequestIdFilter`
+    - [x] `RequestIdMiddleware`
 - [x] Проверить все публичные функции:
-  - [x] `setup_logging`
-  - [x] `get_request_id`
-  - [x] `hash_password`
-  - [x] `verify_password`
-  - [x] `create_access_token`
-  - [x] `decode_access_token`
-  - [x] `register_user`
-  - [x] `authenticate_user`
-  - [x] `get_user`
-  - [x] `app_exception_handler`
-  - [x] `generic_exception_handler`
-  - [x] `get_current_user`
-  - [x] `health_check`
-  - [x] `hello_world`
-  - [x] `auth_register`
-  - [x] `auth_login`
-  - [x] `auth_refresh`
-  - [x] `auth_me`
-  - [x] `auth_logout`
-  - [x] `list_files`
-  - [x] `upload_file`
-  - [x] `get_file_url`
-  - [x] `delete_file`
+    - [x] `setup_logging`
+    - [x] `get_request_id`
+    - [x] `hash_password`
+    - [x] `verify_password`
+    - [x] `create_access_token`
+    - [x] `decode_access_token`
+    - [x] `register_user`
+    - [x] `authenticate_user`
+    - [x] `get_user`
+    - [x] `app_exception_handler`
+    - [x] `generic_exception_handler`
+    - [x] `get_current_user`
+    - [x] `health_check`
+    - [x] `hello_world`
+    - [x] `auth_register`
+    - [x] `auth_login`
+    - [x] `auth_refresh`
+    - [x] `auth_me`
+    - [x] `auth_logout`
+    - [x] `list_files`
+    - [x] `upload_file`
+    - [x] `get_file_url`
+    - [x] `delete_file`
 - [x] Проверить все тестовые функции в `tests/`
 
 ### 1.2. Добавление недостающих docstrings
 
 - [x] Добавить module docstrings в пустые `__init__.py`:
-  - [x] `app/__init__.py`
-  - [x] `app/api/__init__.py`
-  - [x] `app/api/routers/__init__.py`
-  - [x] `app/core/__init__.py`
-  - [x] `app/schemas/__init__.py`
-  - [x] `app/services/__init__.py`
-  - [x] `tests/__init__.py`
+    - [x] `app/__init__.py`
+    - [x] `app/api/__init__.py`
+    - [x] `app/api/routers/__init__.py`
+    - [x] `app/core/__init__.py`
+    - [x] `app/schemas/__init__.py`
+    - [x] `app/services/__init__.py`
+    - [x] `tests/__init__.py`
 - [x] Убедиться, что все функции имеют Google-style docstrings (Args, Returns, Raises)
 - [x] Проверить через `ruff check .` и `pytest`
 

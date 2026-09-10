@@ -35,10 +35,10 @@
 
 - [x] Установить `slowapi` для rate limiting
 - [x] Настроить лимиты:
-  - `/auth/login` — 5 попыток в минуту с одного IP
-  - `/auth/register` — 3 попытки в час с одного IP
-  - `/files/upload` — 10 загрузок в минуту на пользователя
-  - `/files/` (GET) — 60 запросов в минуту на пользователя
+    - `/auth/login` — 5 попыток в минуту с одного IP
+    - `/auth/register` — 3 попытки в час с одного IP
+    - `/files/upload` — 10 загрузок в минуту на пользователя
+    - `/files/` (GET) — 60 запросов в минуту на пользователя
 - [x] Вернуть `429 Too Many Requests` при превышении лимита
 - [x] Добавить тесты на rate limiting
 
@@ -51,11 +51,11 @@
 ### 2.3. Password Policy
 
 - [x] Добавить валидацию пароля при регистрации:
-  - Минимум 8 символов
-  - Хотя бы одна заглавная буква
-  - Хотя бы одна строчная буква
-  - Хотя бы одна цифра
-  - Хотя бы один специальный символ
+    - Минимум 8 символов
+    - Хотя бы одна заглавная буква
+    - Хотя бы одна строчная буква
+    - Хотя бы одна цифра
+    - Хотя бы один специальный символ
 - [x] Добавить Pydantic валидатор для `password` в `RegisterRequest` schema
 - [x] Обновить тесты регистрации (валидные/невалидные пароли)
 
@@ -70,9 +70,9 @@
 ### 2.5. Startup Secret Validation
 
 - [x] Добавить валидацию `settings.jwt_secret` при старте приложения:
-  - Минимальная длина 32 символа
-  - Запретить дефолтное значение `"change-me-in-production"` в production режиме
-  - Запретить дефолтные S3 credentials (`minioadmin`) в production режиме
+    - Минимальная длина 32 символа
+    - Запретить дефолтное значение `"change-me-in-production"` в production режиме
+    - Запретить дефолтные S3 credentials (`minioadmin`) в production режиме
 - [x] Добавить `ENVIRONMENT` переменную (`development` / `production`)
 - [x] При `ENVIRONMENT=production` и слабом секрете — падать с `RuntimeError` и понятным сообщением
 
@@ -83,10 +83,10 @@
 ### 3.1. Filename Sanitization
 
 - [x] Добавить функцию `sanitize_filename()` в `app/services/s3_service.py`:
-  - Удалить path traversal (`../`, `..\\`, нулевые байты)
-  - Разрешить только `a-zA-Z0-9._-`
-  - Ограничить длину до 255 символов
-  - Запретить имена, начинающиеся с точки (hidden files)
+    - Удалить path traversal (`../`, `..\\`, нулевые байты)
+    - Разрешить только `a-zA-Z0-9._-`
+    - Ограничить длину до 255 символов
+    - Запретить имена, начинающиеся с точки (hidden files)
 - [x] Применять sanitization во всех методах, принимающих filename
 - [x] Вернуть `400 Bad Request` при некорректном имени файла
 
@@ -95,9 +95,15 @@
 - [x] Добавить whitelist разрешённых MIME-типов:
   ```python
   ALLOWED_TYPES = {
-      "image/jpeg", "image/png", "image/gif", "image/webp",
-      "application/pdf", "text/plain", "text/markdown",
-      "application/json", "application/zip",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "text/plain",
+      "text/markdown",
+      "application/json",
+      "application/zip",
   }
   ```
 - [x] Проверять `file.content_type` при загрузке
@@ -118,7 +124,7 @@
 
 - [x] Заменить `allow_origins=["*"]` на configurable список:
   ```python
-  allow_origins=["http://localhost:3000", "https://{{ nginx_domain }}"]
+  allow_origins = ["http://localhost:3000", "https://{{ nginx_domain }}"]
   ```
 - [x] При `ENVIRONMENT=production` запретить `*` в origins
 - [x] Вынести `CORS_ORIGINS` в `Settings`
@@ -159,12 +165,12 @@
 
 - [x] Добавить dedicated security logger (`app.core.security_logging`)
 - [x] Логировать события:
-  - `auth.login.success` / `auth.login.failed` (username, IP, user-agent)
-  - `auth.register` (username, IP)
-  - `auth.token.revoked` (username)
-  - `file.upload` (filename, size, user)
-  - `file.delete` (filename, user)
-  - `rate_limit.exceeded` (endpoint, IP)
+    - `auth.login.success` / `auth.login.failed` (username, IP, user-agent)
+    - `auth.register` (username, IP)
+    - `auth.token.revoked` (username)
+    - `file.upload` (filename, size, user)
+    - `file.delete` (filename, user)
+    - `rate_limit.exceeded` (endpoint, IP)
 - [x] Формат: JSON structured logging с полями `event_type`, `severity`, `ip`, `user`
 
 ### 6.2. Suspicious Activity Detection
@@ -261,10 +267,10 @@
 ### 10.1. Security Runbook
 
 - [x] Добавить `docs/security.md`:
-  - Чек-лист деплоя (secrets, HTTPS, headers)
-  - Как ротировать JWT secret
-  - Как реагировать на compromise (token revocation)
-  - Контакты security team / процедура incident response
+    - Чек-лист деплоя (secrets, HTTPS, headers)
+    - Как ротировать JWT secret
+    - Как реагировать на compromise (token revocation)
+    - Контакты security team / процедура incident response
 
 ### 10.2. Secret Rotation Guide
 
@@ -280,5 +286,6 @@
 - [x] `pip-audit` — 0 уязвимостей (No known vulnerabilities found)
 - [x] `npm audit` (frontend) — зависимости актуальные, Node.js не доступен в текущем окружении для аудита
 - [x] Security headers проверены через unit-тесты `tests/test_nginx_security.py`
-- [x] Контейнеры запускаются от non-root (`USER tacitus` в Dockerfile, `user nginx;` в nginx/nginx.conf для worker processes)
+- [x] Контейнеры запускаются от non-root (`USER tacitus` в Dockerfile, `user nginx;` в nginx/nginx.conf для worker
+  processes)
 - [x] Docker Compose YAML валиден (`yaml.safe_load` проходит)
