@@ -130,6 +130,13 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export interface FileListResponse {
   files: string[];
+  /**
+   * Opaque continuation token; null on the last page. A page can be short and
+   * still carry a cursor — the archive prefix counts against the page size on
+   * the S3 side — so "keep loading while next_cursor is set", never "stop when
+   * the page looks small".
+   */
+  next_cursor: string | null;
 }
 
 export interface FileUploadResponse {
@@ -153,16 +160,23 @@ export interface FileStat {
   size_human?: string;
 }
 
+/** Counters for user files; archived recordings are counted apart from them. */
 export interface StatsResponse {
   total_files: number;
   total_size_bytes: number;
   total_size_human: string;
   average_size_bytes: number;
   largest_file: FileStat | null;
+  archive_files: number;
+  archive_size_bytes: number;
+  archive_size_human: string;
 }
 
 export const filesApi = {
-  list: () => apiFetch<FileListResponse>("/files/"),
+  list: (cursor?: string | null) =>
+    apiFetch<FileListResponse>(
+      cursor ? `/files/?cursor=${encodeURIComponent(cursor)}` : "/files/",
+    ),
   upload: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);

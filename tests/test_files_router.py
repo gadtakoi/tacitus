@@ -19,11 +19,66 @@ async def _get_token(client: AsyncClient) -> str:
 @pytest.mark.anyio
 @patch("app.api.routers.files.s3_service")
 async def test_list_files(mock_s3: MagicMock, client: AsyncClient) -> None:
-    mock_s3.list_files = AsyncMock(return_value=["file1.txt", "file2.txt"])
+    mock_s3.list_files = AsyncMock(return_value=(["file1.txt", "file2.txt"], None))
     token = await _get_token(client)
     response = await client.get("/files/", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {"files": ["file1.txt", "file2.txt"]}
+    assert response.json() == {"files": ["file1.txt", "file2.txt"], "next_cursor": None}
+
+
+@pytest.mark.anyio
+@patch("app.api.routers.files.s3_service")
+async def test_list_files_pagination(mock_s3: MagicMock, client: AsyncClient) -> None:
+    """The cursor reaches the client and comes back to the service unchanged."""
+    mock_s3.list_files = AsyncMock(return_value=(["file1.txt"], "token-2"))
+    token = await _get_token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    first = await client.get("/files/?limit=1", headers=headers)
+    assert first.status_code == 200
+    cursor = first.json()["next_cursor"]
+    assert cursor == "token-2"
+    assert mock_s3.list_files.await_args.args == (1, None)
+
+    await client.get(f"/files/?limit=1&cursor={cursor}", headers=headers)
+    assert mock_s3.list_files.await_args.args == (1, "token-2")
+
+
+@pytest.mark.anyio
+@patch("app.api.routers.files.s3_service")
+async def test_list_files_invalid_cursor(mock_s3: MagicMock, client: AsyncClient) -> None:
+    """A cursor S3 refuses is the client's fault: 400, not 500."""
+    from app.services.s3_service import S3InvalidCursorError
+
+    mock_s3.list_files = AsyncMock(side_effect=S3InvalidCursorError("bad"))
+    token = await _get_token(client)
+
+    response = await client.get(
+        "/files/?cursor=bad",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert "cursor" in response.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+@patch("app.api.routers.files.s3_service")
+async def test_list_files_rejects_oversized_limit(
+    mock_s3: MagicMock,
+    client: AsyncClient,
+) -> None:
+    """The page size is bounded by what S3 will actually return."""
+    mock_s3.list_files = AsyncMock(return_value=([], None))
+    token = await _get_token(client)
+
+    response = await client.get(
+        "/files/?limit=1001",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 422
+    mock_s3.list_files.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -117,6 +172,9 @@ async def test_get_stats(mock_s3: MagicMock, client: AsyncClient) -> None:
             "total_size_human": "1.5 KB",
             "average_size_bytes": 512.0,
             "largest_file": {"filename": "big.txt", "size_bytes": 1024},
+            "archive_files": 12,
+            "archive_size_bytes": 4096,
+            "archive_size_human": "4.0 KB",
         }
     )
     token = await _get_token(client)
@@ -126,6 +184,9 @@ async def test_get_stats(mock_s3: MagicMock, client: AsyncClient) -> None:
     assert data["total_files"] == 3
     assert data["total_size_human"] == "1.5 KB"
     assert data["largest_file"]["filename"] == "big.txt"
+    # Recordings are reported next to the files, not folded into them.
+    assert data["archive_files"] == 12
+    assert data["archive_size_human"] == "4.0 KB"
 
 
 @pytest.mark.anyio
@@ -139,6 +200,9 @@ async def test_get_stats_empty(mock_s3: MagicMock, client: AsyncClient) -> None:
             "total_size_human": "0 B",
             "average_size_bytes": 0.0,
             "largest_file": None,
+            "archive_files": 0,
+            "archive_size_bytes": 0,
+            "archive_size_human": "0 B",
         }
     )
     token = await _get_token(client)

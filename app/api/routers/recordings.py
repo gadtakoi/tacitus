@@ -34,6 +34,8 @@ from app.schemas.recordings import (
 )
 from app.schemas.streams import StreamName
 from app.services.s3_service import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
     S3FileNotFoundError,
     S3InvalidCursorError,
     s3_service,
@@ -42,12 +44,6 @@ from app.services.s3_service import (
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 logger = logging.getLogger(__name__)
-
-# Page size bounds for the listing. The upper bound is S3's own ``MaxKeys``
-# limit: asking for more silently returns 1000 anyway, and the client would be
-# left believing it had seen the whole page.
-DEFAULT_PAGE_SIZE = 100
-MAX_PAGE_SIZE = 1000
 
 
 def _validate_key(key: str) -> str:

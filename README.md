@@ -59,7 +59,7 @@ scripts/init.sh --username admin --generate
 | `/auth/refresh`   | POST   | Нет    | Обмен refresh-токена на новую пару (с ротацией) |
 | `/auth/logout`    | POST   | Bearer | Отзыв access- и refresh-токена                  |
 | `/auth/me`        | GET    | Bearer | Текущий пользователь                            |
-| `/files/`         | GET    | Bearer | Список файлов                                   |
+| `/files/`         | GET    | Bearer | Список файлов: страница с курсором              |
 | `/files/upload`   | POST   | Bearer | Загрузка файла                                  |
 | `/files/stats`    | GET    | Bearer | Статистика bucket                               |
 | `/files/{name}`   | GET    | Bearer | Presigned URL                                   |

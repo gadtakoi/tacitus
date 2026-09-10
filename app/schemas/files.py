@@ -11,9 +11,13 @@ class FileUploadResponse(BaseModel):
 
 
 class FileListResponse(BaseModel):
-    """Response schema for file list."""
+    """Response schema for one page of the file list."""
 
     files: list[str]
+    # Opaque S3 continuation token; ``None`` means this was the last page.
+    # A page may hold fewer files than requested and still carry a cursor:
+    # S3 counts the rolled-up archive prefix against the page size.
+    next_cursor: str | None = None
 
 
 class FileUrlResponse(BaseModel):

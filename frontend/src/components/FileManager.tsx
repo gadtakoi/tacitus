@@ -20,31 +20,45 @@ import {
   IconDownload,
   IconChartBar,
   IconAlertCircle,
+  IconVideo,
 } from "@tabler/icons-react";
 import { filesApi, checkUploadSize, formatBytes, type StatsResponse } from "../api/client";
 
 function FileManager() {
   const [files, setFiles] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
 
-  const loadFiles = useCallback(async () => {
-    setLoading(true);
+  /**
+   * Load one page. Without a cursor this replaces the list (first page or a
+   * reload after upload/delete); with one it appends the next page.
+   */
+  const loadFiles = useCallback(async (from: string | null = null) => {
+    if (from) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const data = await filesApi.list();
+      const data = await filesApi.list(from);
       if (data && Array.isArray(data.files)) {
-        setFiles(data.files);
+        setFiles((previous) => (from ? [...previous, ...data.files] : data.files));
+        setCursor(data.next_cursor ?? null);
       } else {
         console.error("Invalid files response", data);
         setFiles([]);
+        setCursor(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
@@ -169,6 +183,15 @@ function FileManager() {
                 </Text>
               </Group>
             )}
+            {/* Archived recordings share the bucket but not this page: they
+                are counted apart so the numbers above describe the list. */}
+            <Group gap={4}>
+              <IconVideo size={16} opacity={0.7} />
+              <Text size="sm">
+                Recordings archived: <strong>{stats.archive_files ?? 0}</strong>{" "}
+                ({stats.archive_size_human ?? "0 B"})
+              </Text>
+            </Group>
           </Group>
         </Paper>
       )}
@@ -228,6 +251,20 @@ function FileManager() {
             ))}
           </Table.Tbody>
         </Table>
+      )}
+
+      {/* The cursor, not the page size, decides whether more files exist: a
+          short page can still be followed by another one. */}
+      {cursor && (
+        <Group justify="center" mt="md">
+          <Button
+            variant="default"
+            loading={loadingMore}
+            onClick={() => loadFiles(cursor)}
+          >
+            Load more
+          </Button>
+        </Group>
       )}
     </div>
   );

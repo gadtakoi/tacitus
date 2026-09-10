@@ -3,7 +3,7 @@
 import logging
 import posixpath
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 
 from app.api.dependencies import get_current_user
 from app.core.ip import get_client_ip
@@ -18,8 +18,11 @@ from app.schemas.files import (
 from app.schemas.stats import FileStat, S3StatsResponse
 from app.services.s3_service import (
     ALLOWED_TYPES,
+    DEFAULT_PAGE_SIZE,
     FORBIDDEN_EXTENSIONS,
+    MAX_PAGE_SIZE,
     S3FileNotFoundError,
+    S3InvalidCursorError,
     s3_service,
     sanitize_filename,
 )
@@ -88,21 +91,36 @@ def _validate_filename(filename: str) -> str:
 @limiter.limit("60/minute", key_func=get_user_or_ip)
 async def list_files(
     request: Request,
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = None,
     current_user: str = Depends(get_current_user),
 ) -> FileListResponse:
-    """List all files in S3 bucket.
+    """List one page of user files in the S3 bucket.
+
+    Only objects at the bucket root are listed. Archived recordings share the
+    bucket but not this namespace — they are served by ``/recordings``.
 
     Args:
         request: FastAPI request object.
+        limit: Page size. A page may hold fewer files and still carry a cursor:
+            S3 counts the rolled-up archive prefix against this number.
+        cursor: Continuation token from a previous response.
         current_user: Authenticated username.
 
     Returns:
-        FileListResponse with list of filenames.
+        FileListResponse with the page and the cursor for the next one.
+
+    Raises:
+        HTTPException: 400 if the cursor is rejected by S3; 429 if the rate
+            limit is exceeded.
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info("Listing files", extra={"request_id": request_id, "user": current_user})
-    files = await s3_service.list_files()
-    return FileListResponse(files=files)
+    try:
+        files, next_cursor = await s3_service.list_files(limit, cursor)
+    except S3InvalidCursorError as exc:
+        raise HTTPException(status_code=400, detail="Invalid pagination cursor") from exc
+    return FileListResponse(files=files, next_cursor=next_cursor)
 
 
 @router.post("/upload", response_model=FileUploadResponse)
@@ -177,6 +195,9 @@ async def get_stats(
         total_size_human=stats["total_size_human"],
         average_size_bytes=stats["average_size_bytes"],
         largest_file=FileStat(**largest) if largest else None,
+        archive_files=stats["archive_files"],
+        archive_size_bytes=stats["archive_size_bytes"],
+        archive_size_human=stats["archive_size_human"],
     )
 
 

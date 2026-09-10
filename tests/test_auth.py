@@ -83,11 +83,11 @@ async def test_protected_endpoint_with_invalid_token(client: AsyncClient) -> Non
 @patch("app.api.routers.files.s3_service")
 async def test_protected_endpoint_with_valid_token(mock_s3: MagicMock, client: AsyncClient) -> None:
     """Test accessing protected endpoint with valid token."""
-    mock_s3.list_files = AsyncMock(return_value=[])
+    mock_s3.list_files = AsyncMock(return_value=([], None))
     token = await _get_token(client)
     response = await client.get("/files/", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {"files": []}
+    assert response.json() == {"files": [], "next_cursor": None}
 
 
 @pytest.mark.anyio

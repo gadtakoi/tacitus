@@ -18,6 +18,8 @@ from app.services.s3_service import (
     sanitize_object_key,
 )
 
+_MODIFIED = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+
 
 @pytest.fixture
 def s3_service() -> S3Service:
@@ -29,42 +31,66 @@ def s3_service() -> S3Service:
 async def test_list_files(mock_client: MagicMock, s3_service: S3Service) -> None:
     mock_client.return_value.list_objects_v2.return_value = {
         "Contents": [
-            {"Key": "file1.txt"},
-            {"Key": "file2.txt"},
+            {"Key": "file1.txt", "Size": 1, "LastModified": _MODIFIED},
+            {"Key": "file2.txt", "Size": 2, "LastModified": _MODIFIED},
         ]
     }
-    files = await s3_service.list_files()
+    files, cursor = await s3_service.list_files()
     assert files == ["file1.txt", "file2.txt"]
+    assert cursor is None
 
 
 @pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
 async def test_list_files_empty(mock_client: MagicMock, s3_service: S3Service) -> None:
     mock_client.return_value.list_objects_v2.return_value = {}
-    files = await s3_service.list_files()
+    files, cursor = await s3_service.list_files()
     assert files == []
+    assert cursor is None
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_list_files_excludes_nested_keys(
+    mock_client: MagicMock,
+    s3_service: S3Service,
+) -> None:
+    """The archive is rolled up by the delimiter, not filtered afterwards.
+
+    S3 returns nested keys under ``CommonPrefixes`` when a delimiter is set, so
+    the whole archive costs one entry of the page instead of being read and
+    discarded key by key.
+    """
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [{"Key": "report.pdf", "Size": 10, "LastModified": _MODIFIED}],
+        "CommonPrefixes": [{"Prefix": "mediamtx-archives/"}],
+    }
+
+    files, _ = await s3_service.list_files()
+
+    assert files == ["report.pdf"]
+    assert mock_client.return_value.list_objects_v2.call_args.kwargs["Delimiter"] == "/"
 
 
 @pytest.mark.anyio
 @patch("app.services.s3_service.boto3.client")
 async def test_list_files_pagination(mock_client: MagicMock, s3_service: S3Service) -> None:
-    """Buckets with more than 1000 objects must be listed across pages."""
-    mock_client.return_value.list_objects_v2.side_effect = [
-        {
-            "Contents": [{"Key": "file1.txt"}, {"Key": "file2.txt"}],
-            "IsTruncated": True,
-            "NextContinuationToken": "token-1",
-        },
-        {
-            "Contents": [{"Key": "file3.txt"}],
-            "IsTruncated": False,
-        },
-    ]
-    files = await s3_service.list_files()
-    assert files == ["file1.txt", "file2.txt", "file3.txt"]
-    # The second call must carry the continuation token
-    second_call = mock_client.return_value.list_objects_v2.call_args_list[1]
-    assert second_call.kwargs["ContinuationToken"] == "token-1"
+    """One call per page: the caller decides whether to ask for the next one."""
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [{"Key": "file1.txt", "Size": 1, "LastModified": _MODIFIED}],
+        "IsTruncated": True,
+        "NextContinuationToken": "token-1",
+    }
+
+    files, cursor = await s3_service.list_files(limit=1)
+    assert files == ["file1.txt"]
+    assert cursor == "token-1"
+    assert mock_client.return_value.list_objects_v2.call_count == 1
+
+    await s3_service.list_files(limit=1, cursor=cursor)
+    assert mock_client.return_value.list_objects_v2.call_args.kwargs["ContinuationToken"] == (
+        "token-1"
+    )
 
 
 @pytest.mark.anyio
@@ -189,6 +215,8 @@ async def test_get_bucket_stats(mock_client: MagicMock, s3_service: S3Service) -
     assert largest is not None
     assert largest["filename"] == "c.txt"
     assert largest["size_bytes"] == 768
+    assert stats["archive_files"] == 0
+    assert stats["archive_size_human"] == "0 B"
 
 
 @pytest.mark.anyio
@@ -202,6 +230,54 @@ async def test_get_bucket_stats_empty(mock_client: MagicMock, s3_service: S3Serv
     assert stats["total_size_human"] == "0 B"
     assert stats["average_size_bytes"] == 0.0
     assert stats["largest_file"] is None
+    assert stats["archive_files"] == 0
+    assert stats["archive_size_bytes"] == 0
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_get_bucket_stats_counts_archive_separately(
+    mock_client: MagicMock,
+    s3_service: S3Service,
+) -> None:
+    """Recordings must not inflate the summary shown next to the file list."""
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "report.pdf", "Size": 100},
+            {"Key": "mediamtx-archives/cam1/a.mp4", "Size": 1000},
+            {"Key": "mediamtx-archives/cam1/b.mp4", "Size": 2000},
+        ]
+    }
+
+    stats = await s3_service.get_bucket_stats()
+
+    assert stats["total_files"] == 1
+    assert stats["total_size_bytes"] == 100
+    largest = stats["largest_file"]
+    assert largest is not None
+    # The largest object in the bucket is a recording; the largest *file* is not.
+    assert largest["filename"] == "report.pdf"
+    assert stats["archive_files"] == 2
+    assert stats["archive_size_bytes"] == 3000
+
+
+@pytest.mark.anyio
+@patch("app.services.s3_service.boto3.client")
+async def test_get_bucket_stats_archive_only(
+    mock_client: MagicMock,
+    s3_service: S3Service,
+) -> None:
+    """A bucket holding only recordings reports zero files, not zero archive."""
+    mock_client.return_value.list_objects_v2.return_value = {
+        "Contents": [{"Key": "mediamtx-archives/cam1/a.mp4", "Size": 2048}]
+    }
+
+    stats = await s3_service.get_bucket_stats()
+
+    assert stats["total_files"] == 0
+    assert stats["largest_file"] is None
+    assert stats["archive_files"] == 1
+    assert stats["archive_size_human"] == "2.0 KB"
 
 
 def test_sanitize_filename_valid() -> None:

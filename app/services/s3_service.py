@@ -87,6 +87,12 @@ def sanitize_filename(filename: str) -> str:
 # Maximum key length accepted by S3, in bytes.
 MAX_OBJECT_KEY_LENGTH = 1024
 
+# Page size bounds shared by every paginated listing. The upper bound is S3's
+# own ``MaxKeys`` limit: asking for more silently returns 1000 anyway, and the
+# client would be left believing it had seen the whole page.
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 1000
+
 # Characters allowed in a single path segment of an object key. Deliberately the
 # same alphabet ``sanitize_filename`` accepts: MediaMTX writes recordings as
 # ``<stream>/<YYYY-MM-DD_HH-MM-SS-ffffff>.mp4`` and nothing outside it.
@@ -164,13 +170,22 @@ class _LargestFileStat(TypedDict):
 
 
 class _BucketStats(TypedDict):
-    """Typed representation of bucket statistics returned by S3Service."""
+    """Typed representation of bucket statistics returned by S3Service.
+
+    The ``total_*`` counters describe user files only. Archived recordings are
+    counted separately: they share the bucket but not the namespace, and they
+    outnumber the files by orders of magnitude once recording has been running
+    for a while.
+    """
 
     total_files: int
     total_size_bytes: int
     total_size_human: str
     average_size_bytes: float
     largest_file: _LargestFileStat | None
+    archive_files: int
+    archive_size_bytes: int
+    archive_size_human: str
 
 
 class S3Service:
@@ -245,11 +260,14 @@ class S3Service:
         prefix: str,
         limit: int,
         cursor: str | None,
+        delimiter: str,
     ) -> tuple[list[ObjectSummary], str | None]:
         """Blocking part of the paginated listing: one ``list_objects_v2`` call."""
         kwargs: dict[str, Any] = {"Bucket": self.bucket, "MaxKeys": limit}
         if prefix:
             kwargs["Prefix"] = prefix
+        if delimiter:
+            kwargs["Delimiter"] = delimiter
         if cursor:
             kwargs["ContinuationToken"] = cursor
         try:
@@ -276,8 +294,9 @@ class S3Service:
     async def list_objects(
         self,
         prefix: str = "",
-        limit: int = 100,
+        limit: int = DEFAULT_PAGE_SIZE,
         cursor: str | None = None,
+        delimiter: str = "",
     ) -> tuple[list[ObjectSummary], str | None]:
         """Return a single page of objects, newest pagination state included.
 
@@ -290,6 +309,9 @@ class S3Service:
             prefix: Key prefix to list; empty string lists the whole bucket.
             limit: Maximum number of keys in the page (S3 caps this at 1000).
             cursor: Continuation token returned by a previous call.
+            delimiter: When set, keys containing it after ``prefix`` are rolled
+                up into common prefixes and left out of the result. Empty string
+                lists every key, nesting included.
 
         Returns:
             Tuple of ``(items, next_cursor)``; ``next_cursor`` is ``None`` on the
@@ -300,7 +322,9 @@ class S3Service:
             ClientError: If S3 returns any other error.
         """
         try:
-            return await asyncio.to_thread(self._sync_list_objects_page, prefix, limit, cursor)
+            return await asyncio.to_thread(
+                self._sync_list_objects_page, prefix, limit, cursor, delimiter
+            )
         except S3InvalidCursorError:
             logger.warning("S3 rejected the pagination cursor", extra={"prefix": prefix})
             raise
@@ -308,21 +332,42 @@ class S3Service:
             logger.error("Failed to list objects", extra={"prefix": prefix, "error": str(e)})
             raise
 
-    async def list_files(self) -> list[str]:
-        """Return list of file names in bucket.
+    async def list_files(
+        self,
+        limit: int = DEFAULT_PAGE_SIZE,
+        cursor: str | None = None,
+    ) -> tuple[list[str], str | None]:
+        """Return one page of user files: the objects at the bucket root.
 
-        Follows S3 pagination so buckets with more than 1000 objects are
-        listed completely.
+        The listing is delimited by ``/``, which is what separates user files
+        from archived recordings. Uploads go through
+        :func:`sanitize_filename`, so a file created by this service can never
+        contain a slash; everything nested — the whole archive under
+        ``settings.s3_archive_prefix`` included — is rolled up by S3 into common
+        prefixes and never reaches the result.
+
+        The delimiter also keeps the cost of a page constant. Filtering the
+        archive out in Python instead would still pay for reading it: with tens
+        of thousands of segments the caller would page through the archive a
+        hundred keys at a time, receiving empty pages, just to reach the files
+        sorted after it.
+
+        Args:
+            limit: Maximum page size. Note that S3 counts rolled-up common
+                prefixes against it, so a page may hold fewer than ``limit``
+                files while more pages remain.
+            cursor: Continuation token from a previous call.
 
         Returns:
-            List of object keys.
+            Tuple of ``(filenames, next_cursor)``; ``next_cursor`` is ``None``
+            on the last page.
+
+        Raises:
+            S3InvalidCursorError: If S3 rejects ``cursor``.
+            ClientError: If S3 returns any other error.
         """
-        try:
-            objects = await asyncio.to_thread(self._sync_list_all_objects)
-            return [obj["Key"] for obj in objects]
-        except ClientError as e:
-            logger.error("Failed to list files", extra={"error": str(e)})
-            raise
+        items, next_cursor = await self.list_objects(limit=limit, cursor=cursor, delimiter="/")
+        return [item["key"] for item in items], next_cursor
 
     def _sync_upload_file(self, sanitized: str, content: bytes) -> None:
         """Blocking part of the upload: single ``put_object`` call."""
@@ -482,19 +527,31 @@ class S3Service:
     def _sync_get_bucket_stats(self) -> _BucketStats:
         """Blocking part of stats computation over the full object listing."""
         contents = self._sync_list_all_objects()
-        if not contents:
+        # The bucket holds two namespaces, and mixing them makes the summary on
+        # the files page describe objects the page does not show: a handful of
+        # uploads next to every recording ever archived. Files are the objects
+        # at the root — exactly what ``list_files`` returns and what an upload
+        # can create; recordings are everything under the archive prefix.
+        files = [obj for obj in contents if "/" not in obj["Key"]]
+        archive = [obj for obj in contents if obj["Key"].startswith(settings.s3_archive_prefix)]
+        archive_size = sum(obj["Size"] for obj in archive)
+
+        if not files:
             return {
                 "total_files": 0,
                 "total_size_bytes": 0,
                 "total_size_human": "0 B",
                 "average_size_bytes": 0.0,
                 "largest_file": None,
+                "archive_files": len(archive),
+                "archive_size_bytes": archive_size,
+                "archive_size_human": _human_readable_size(archive_size),
             }
 
-        total_files = len(contents)
-        total_size = sum(obj["Size"] for obj in contents)
+        total_files = len(files)
+        total_size = sum(obj["Size"] for obj in files)
         average_size = total_size / total_files
-        largest = max(contents, key=lambda obj: obj["Size"])
+        largest = max(files, key=lambda obj: obj["Size"])
 
         return {
             "total_files": total_files,
@@ -502,17 +559,23 @@ class S3Service:
             "total_size_human": _human_readable_size(total_size),
             "average_size_bytes": average_size,
             "largest_file": _LargestFileStat(filename=largest["Key"], size_bytes=largest["Size"]),
+            "archive_files": len(archive),
+            "archive_size_bytes": archive_size,
+            "archive_size_human": _human_readable_size(archive_size),
         }
 
     async def get_bucket_stats(self) -> _BucketStats:
-        """Return statistics for the S3 bucket.
+        """Return statistics for the S3 bucket, files and archive apart.
 
         Follows S3 pagination so statistics cover every object in the bucket,
         not just the first 1000 returned by a single ``list_objects_v2`` call.
+        This is the one place that still reads the whole bucket: a total is not
+        a page, and there is nothing to hand a client instead of the answer.
 
         Returns:
-            Dictionary with total_files, total_size_bytes, total_size_human,
-            average_size_bytes, and largest_file.
+            Dictionary with the file counters (total_files, total_size_bytes,
+            total_size_human, average_size_bytes, largest_file) and the archive
+            counters (archive_files, archive_size_bytes, archive_size_human).
         """
         try:
             return await asyncio.to_thread(self._sync_get_bucket_stats)
